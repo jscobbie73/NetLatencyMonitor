@@ -1,0 +1,35 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - revive
+    - bodyclose
+    - rowserrcheck
+    - sqlclosecheck
+  settings:
+    revive:
+      rules:
+        - name: var-naming
+        - name: exported
+          arguments: [disableStutteringCheck]
+        - name: error-return
+        - name: error-naming
+        - name: if-return
+        - name: increment-decrement
+        - name: unreachable-code
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
