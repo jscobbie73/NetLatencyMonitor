@@ -1,0 +1,118 @@
+package ui
+
+import "fmt"
+
+templ Dashboard(matrix LatencyMatrix) {
+	@layout("Dashboard") {
+		<div class="page-header">
+			<div>
+				<h1>Latency Matrix</h1>
+				<p class="subtitle">TCP probe latency between hub nodes (ms, 5-min avg). Updates in real-time.</p>
+			</div>
+			<span id="ws-status" class="ws-status"></span>
+		</div>
+		<div class="matrix-scroll">
+			@MatrixTable(matrix)
+		</div>
+		@wsScript()
+	}
+}
+
+// MatrixTable renders the N×N latency grid. It is also served as a fragment
+// by GET /ui/frag/matrix for htmx fallback polling.
+templ MatrixTable(matrix LatencyMatrix) {
+	<div id="matrix-wrap" hx-get="/ui/frag/matrix" hx-trigger="every 30s" hx-swap="outerHTML">
+		if len(matrix.Nodes) == 0 {
+			<p class="empty">No hub nodes yet. <a href="/ui/nodes">Add one →</a></p>
+		} else {
+			<table class="matrix">
+				<thead>
+					<tr>
+						<th class="corner">from ╲ to</th>
+						for _, n := range matrix.Nodes {
+							<th>{ n }</th>
+						}
+					</tr>
+				</thead>
+				<tbody>
+					for _, src := range matrix.Nodes {
+						<tr>
+							<td class="row-label">{ src }</td>
+							for _, dst := range matrix.Nodes {
+								if src == dst {
+									<td class="cell-self">—</td>
+								} else {
+									@matrixCell(matrix.Get(src, dst), src, dst)
+								}
+							}
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</div>
+}
+
+templ matrixCell(e *MatrixEntry, src, dst string) {
+	if e == nil {
+		<td id={ cellID(src, dst) } class="cell-unknown">?</td>
+	} else if e.HasError {
+		<td id={ cellID(src, dst) } class="cell-error" title="probe error">✕</td>
+	} else {
+		<td
+			id={ cellID(src, dst) }
+			class={ cellClass(e.AvgLatMS) }
+			title={ fmt.Sprintf("avg %.1f ms  min %.1f  max %.1f  n=%d", e.AvgLatMS, e.MinLatMS, e.MaxLatMS, e.Samples) }
+		>{ fmt.Sprintf("%.1f", e.AvgLatMS) }</td>
+	}
+}
+
+func cellID(src, dst string) string {
+	return "cell-" + src + "-" + dst
+}
+
+// wsScript injects the WebSocket client that updates matrix cells in real-time.
+templ wsScript() {
+	<script>
+	(function () {
+		var statusEl = document.getElementById('ws-status');
+		var dot = document.createElement('span');
+		dot.className = 'ws-dot';
+		dot.style.background = 'var(--unknown)';
+
+		function setStatus(msg, color) {
+			dot.style.background = color || 'var(--unknown)';
+			statusEl.textContent = msg ? ' ' + msg : '';
+			statusEl.prepend(dot);
+		}
+
+		var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+		var ws = new WebSocket(proto + '//' + location.host + '/api/v1/ui/ws');
+
+		ws.onopen = function () { setStatus('', 'var(--good)'); };
+		ws.onclose = function () { setStatus('disconnected', 'var(--bad)'); };
+		ws.onerror = function () { setStatus('error', 'var(--bad)'); };
+
+		ws.onmessage = function (ev) {
+			var msg;
+			try { msg = JSON.parse(ev.data); } catch (_) { return; }
+			if (msg.type !== 'probe_result') return;
+
+			var id = 'cell-' + msg.source_id + '-' + msg.target_id;
+			var cell = document.getElementById(id);
+			if (!cell) return;
+
+			if (msg.error) {
+				cell.textContent = '✕';
+				cell.className = 'cell-error';
+				cell.title = 'probe error';
+			} else {
+				var ms = msg.latency_ms;
+				cell.textContent = ms.toFixed(1);
+				cell.className = ms < 10 ? 'cell-good' : ms < 50 ? 'cell-warn' : 'cell-bad';
+				cell.title = ms.toFixed(2) + ' ms';
+			}
+		};
+	})();
+	</script>
+}

@@ -1,0 +1,117 @@
+/* NLM Web UI — minimal stylesheet */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0f1117;
+  --surface:  #1a1d27;
+  --border:   #2d3045;
+  --text:     #e2e8f0;
+  --muted:    #94a3b8;
+  --accent:   #6366f1;
+  --good:     #22c55e;
+  --warn:     #f59e0b;
+  --bad:      #ef4444;
+  --unknown:  #64748b;
+  --radius:   6px;
+  --font:     'Inter', system-ui, sans-serif;
+  --mono:     'JetBrains Mono', 'Fira Code', monospace;
+}
+
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.6; }
+
+/* ── Nav ── */
+.nav { display: flex; align-items: center; gap: 1.5rem; padding: .75rem 1.5rem; background: var(--surface); border-bottom: 1px solid var(--border); }
+.nav-brand { font-weight: 700; font-size: 1.1rem; color: var(--accent); text-decoration: none; margin-right: auto; }
+.nav a { color: var(--muted); text-decoration: none; }
+.nav a:hover { color: var(--text); }
+.nav-form { margin: 0; }
+.nav-logout { background: none; border: 1px solid var(--border); color: var(--muted); padding: .25rem .75rem; border-radius: var(--radius); cursor: pointer; font-size: 13px; }
+.nav-logout:hover { border-color: var(--bad); color: var(--bad); }
+
+/* ── Main ── */
+main { padding: 2rem 1.5rem; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 1.4rem; margin-bottom: .25rem; }
+.subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: 13px; }
+
+/* ── Latency matrix ── */
+.matrix { border-collapse: collapse; font-size: 13px; }
+.matrix th, .matrix td { padding: .35rem .6rem; border: 1px solid var(--border); text-align: center; white-space: nowrap; }
+.matrix th { background: var(--surface); color: var(--muted); font-weight: 500; }
+.corner { background: var(--bg) !important; }
+.row-label { font-family: var(--mono); font-size: 12px; background: var(--surface); text-align: left !important; color: var(--muted); }
+.cell-good    { background: #14532d44; color: var(--good); font-family: var(--mono); }
+.cell-warn    { background: #78350f44; color: var(--warn); font-family: var(--mono); }
+.cell-bad     { background: #7f1d1d44; color: var(--bad);  font-family: var(--mono); }
+.cell-error   { background: #7f1d1d66; color: var(--bad);  }
+.cell-unknown { color: var(--unknown); }
+.cell-self    { color: var(--border); }
+
+/* ── WS status ── */
+.ws-status { display: inline-block; margin-left: 1rem; font-size: 12px; color: var(--bad); }
+.ws-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--good); margin-right: .4rem; vertical-align: middle; }
+
+/* ── Nodes table ── */
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+.nodes-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.nodes-table th, .nodes-table td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); text-align: left; }
+.nodes-table th { color: var(--muted); font-weight: 500; }
+.nodes-table tr:hover td { background: var(--surface); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.actions { text-align: right !important; white-space: nowrap; }
+
+/* ── Badges ── */
+.badge { display: inline-block; padding: .15rem .5rem; border-radius: 99px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.badge-hub      { background: #3730a344; color: #818cf8; }
+.badge-spoke    { background: #065f4644; color: #34d399; }
+.badge-listener { background: #78350f44; color: #fbbf24; }
+.badge-active   { background: #14532d44; color: var(--good); }
+.badge-disabled { background: #1e293b;   color: var(--muted); }
+
+/* ── Buttons ── */
+.btn-primary   { background: var(--accent); color: #fff; border: none; padding: .4rem 1rem; border-radius: var(--radius); cursor: pointer; font-size: 13px; font-weight: 500; }
+.btn-primary:hover   { background: #4f46e5; }
+.btn-secondary { background: none; border: 1px solid var(--border); color: var(--text); padding: .4rem 1rem; border-radius: var(--radius); cursor: pointer; font-size: 13px; }
+.btn-secondary:hover { border-color: var(--text); }
+.btn-danger    { background: none; border: 1px solid var(--border); color: var(--muted); padding: .25rem .6rem; border-radius: var(--radius); cursor: pointer; font-size: 12px; }
+.btn-danger:hover    { border-color: var(--bad); color: var(--bad); }
+.btn-sm  { padding: .2rem .5rem; font-size: 11px; }
+.btn-full { width: 100%; }
+
+/* ── Create-node form ── */
+.create-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; }
+.create-form h2 { font-size: 1rem; margin-bottom: 1rem; }
+.form-row { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1rem; }
+.form-row label { display: flex; flex-direction: column; gap: .25rem; font-size: 12px; color: var(--muted); }
+.form-row input, .form-row select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: .35rem .6rem; border-radius: var(--radius); font-size: 13px; min-width: 180px; }
+.form-row input:focus, .form-row select:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+.form-actions { display: flex; gap: .75rem; }
+
+/* ── Alert ── */
+.alert { padding: .6rem 1rem; border-radius: var(--radius); margin-bottom: 1rem; font-size: 13px; }
+.alert-error { background: #7f1d1d44; border: 1px solid #b91c1c66; color: var(--bad); }
+
+/* ── Secret box ── */
+.secret-box { margin-top: 1rem; background: var(--surface); border: 1px solid var(--warn); border-radius: var(--radius); padding: .75rem 1rem; }
+.secret-box p { color: var(--warn); font-size: 12px; margin-bottom: .4rem; }
+.secret-value { font-family: var(--mono); font-size: 13px; word-break: break-all; }
+
+/* ── Login ── */
+.login-body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.login-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem; width: 360px; }
+.login-card h1 { font-size: 1.2rem; margin-bottom: .25rem; }
+.login-card .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 1.5rem; }
+.login-card label { display: flex; flex-direction: column; gap: .3rem; font-size: 12px; color: var(--muted); margin-bottom: 1rem; }
+.login-card input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: .5rem .75rem; border-radius: var(--radius); font-size: 14px; }
+.login-card input:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+
+/* ── HTMX loading indicator ── */
+.htmx-indicator { opacity: 0; transition: opacity 200ms; }
+.htmx-request .htmx-indicator { opacity: 1; }
+
+/* ── Empty state ── */
+.empty { color: var(--muted); padding: 2rem 0; }
+.empty a { color: var(--accent); }
+
+/* ── Scrollable matrix wrapper ── */
+.matrix-scroll { overflow-x: auto; }

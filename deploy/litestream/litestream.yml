@@ -1,0 +1,29 @@
+# Litestream replication config for the NLM Controller database.
+#
+# Credentials must be provided via environment variables — set them in
+# /etc/nlm/litestream.env (loaded by nlm-litestream.service).
+#
+# Minimum required env vars:
+#   LITESTREAM_ACCESS_KEY_ID
+#   LITESTREAM_SECRET_ACCESS_KEY
+#   LITESTREAM_S3_BUCKET
+#   LITESTREAM_S3_REGION
+#
+# For non-AWS S3-compatible stores (Hetzner Object Storage, Backblaze B2, etc.)
+# also set LITESTREAM_S3_ENDPOINT.
+
+dbs:
+  - path: /var/lib/nlm/nlm.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_S3_BUCKET}
+        path: nlm/nlm.db
+        region: ${LITESTREAM_S3_REGION}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        # Uncomment for non-AWS S3-compatible stores:
+        # endpoint: ${LITESTREAM_S3_ENDPOINT}
+        sync-interval: 1s
+        retention: 24h
+        retention-check-interval: 1h
+        snapshot-interval: 6h

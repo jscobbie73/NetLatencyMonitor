@@ -1,0 +1,37 @@
+# NLM Controller — TLS-terminating reverse proxy.
+#
+# Replace nlm.example.com with your actual domain.
+# ACME_EMAIL can be set in the environment or replaced inline.
+
+{
+    email {$ACME_EMAIL:ops@example.com}
+
+    # Uncomment to use the ACME staging CA while testing DNS/TLS setup:
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+nlm.example.com {
+    reverse_proxy localhost:8080 {
+        health_uri      /healthz
+        health_interval 10s
+        health_timeout  5s
+    }
+
+    encode gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "no-referrer"
+        -Server
+    }
+
+    log {
+        output file /var/log/caddy/nlm-access.log {
+            roll_size 50mb
+            roll_keep 5
+        }
+        format json
+    }
+}

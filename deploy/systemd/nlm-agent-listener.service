@@ -1,0 +1,28 @@
+[Unit]
+Description=NetLatencyMonitor Agent (listener mode)
+Documentation=https://github.com/jscobbie73/netlatencymonitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nlm
+Group=nlm
+EnvironmentFile=/etc/nlm/agent.env
+ExecStart=/usr/local/bin/nlm-agent --mode listener
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+
+ReadWritePaths=/var/lib/nlm
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

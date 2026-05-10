@@ -1,0 +1,27 @@
+# Build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Go
+/vendor/
+
+# SQLite & WAL artifacts
+*.db
+*.db-wal
+*.db-shm
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local env overrides
+.env
+.env.local
+
+# Test coverage
+coverage.out
+coverage.html

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run NLM spoke probe every 60 seconds
+Documentation=https://github.com/jscobbie73/netlatencymonitor
+Requires=nlm-agent-spoke.service
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
