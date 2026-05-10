@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"os"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/jscobbie73/netlatencymonitor/internal/litestream"
 	"github.com/jscobbie73/netlatencymonitor/internal/metrics"
 	"github.com/jscobbie73/netlatencymonitor/internal/ticket"
+	nlmui "github.com/jscobbie73/netlatencymonitor/internal/ui"
 )
 
 // Options configures a Server. Optional fields default to safe stubs so the
@@ -76,6 +78,7 @@ type Server struct {
 	metricsToken string
 
 	adminToken string
+	wsHub      *WSHub
 }
 
 // New wires a minimal Server. Use NewWithOptions for the full Phase 4 stack.
@@ -104,6 +107,7 @@ func NewWithOptions(db *sql.DB, log zerolog.Logger, opt Options) *Server {
 	if s.tickets == nil {
 		s.tickets = ticket.NewStore(0)
 	}
+	s.wsHub = newWSHub()
 	return s
 }
 
@@ -128,6 +132,31 @@ func (s *Server) Handler() http.Handler {
 	if s.metrics != nil {
 		mux.Handle("GET /metrics", s.metrics.Handler(s.metricsToken, s.refreshMetrics))
 	}
+
+	// ── Web UI ─────────────────────────────────────────────────────────────
+	mux.HandleFunc("GET /ui/login", s.handleUILogin)
+	mux.HandleFunc("POST /ui/login", s.handleUILogin)
+	mux.HandleFunc("POST /ui/logout", s.handleUILogout)
+
+	mux.HandleFunc("GET /ui/", s.requireSession(s.handleUIDashboard))
+	mux.HandleFunc("GET /ui/nodes", s.requireSession(s.handleUINodes))
+
+	// htmx fragment endpoints (session-gated).
+	mux.HandleFunc("GET /ui/frag/matrix", s.requireSession(s.handleFragMatrix))
+	mux.HandleFunc("GET /ui/frag/nodes/new", s.requireSession(s.handleFragNewNodeForm))
+	mux.HandleFunc("POST /ui/frag/nodes", s.requireSession(s.handleFragCreateNode))
+	mux.HandleFunc("DELETE /ui/frag/nodes/{id}", s.requireSession(s.handleFragDeleteNode))
+	mux.HandleFunc("PATCH /ui/frag/nodes/{id}/disable", s.requireSession(s.handleFragDisableNode))
+	mux.HandleFunc("PATCH /ui/frag/nodes/{id}/enable", s.requireSession(s.handleFragEnableNode))
+
+	// UI WebSocket (session-gated, separate from agent WS).
+	mux.HandleFunc("GET /api/v1/ui/ws", s.handleUIWS)
+
+	// Static assets — strip "static/" prefix from the embedded FS so that
+	// /static/style.css → fs:static/style.css resolves correctly.
+	staticFS, _ := fs.Sub(nlmui.StaticFS, "static")
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+
 	return mux
 }
 

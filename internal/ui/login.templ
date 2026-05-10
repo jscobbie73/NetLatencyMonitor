@@ -1,0 +1,29 @@
+package ui
+
+templ Login(errMsg string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>Login – NLM</title>
+			<link rel="stylesheet" href="/static/style.css"/>
+		</head>
+		<body class="login-body">
+			<div class="login-card">
+				<h1>NetLatencyMonitor</h1>
+				<p class="subtitle">Enter your admin token to continue.</p>
+				if errMsg != "" {
+					<div class="alert alert-error">{ errMsg }</div>
+				}
+				<form method="POST" action="/ui/login">
+					<label>
+						Admin Token
+						<input type="password" name="token" autofocus required/>
+					</label>
+					<button type="submit" class="btn-primary btn-full">Sign in</button>
+				</form>
+			</div>
+		</body>
+	</html>
+}

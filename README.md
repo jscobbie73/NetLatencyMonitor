@@ -14,7 +14,7 @@ full design; this README tracks what's been built so far.
 | 4 | `/readyz` (chrony fail-closed + Litestream lag), WS ticket auth + per-IP rate limit, Prometheus metrics | Done |
 | 5 | Hub mode, controller-managed target list with version-piggyback, admin REST API | Done |
 | 6 | Ops: systemd units, Caddy, Litestream config, Terraform (Hetzner), `make install`, Litestream journal watcher | Done |
-| 7 | Web UI (templ + htmx + WebSocket) | Pending |
+| 7 | Web UI (templ + htmx + WebSocket) — dashboard, node CRUD, real-time matrix | Done |
 
 ## Build & test
 
@@ -22,6 +22,7 @@ full design; this README tracks what's been built so far.
 make build      # produces bin/nlm-agent and bin/nlm-controller
 make test       # go test -race ./...
 make lint       # requires golangci-lint v2
+make templ      # regenerate *_templ.go from *.templ sources (requires Go)
 ```
 
 Requires Go 1.22+.
@@ -103,6 +104,24 @@ NLM_LISTENER_LISTEN=:8444 ./bin/nlm-agent --mode listener
   Litestream lag exceeds the gate.
 - **Observability**: every metric named in spec §11.1 is exposed at
   `/metrics`, gated by an optional bearer token.
+
+## Web UI (Phase 7)
+
+Once the controller is running, open `https://<your-domain>/ui/login` and enter
+`NLM_ADMIN_TOKEN`. The session cookie is HttpOnly + SameSite=Strict.
+
+| Route | What you get |
+|-------|-------------|
+| `/ui/` | Live latency matrix — hub × hub, 5-min average, WebSocket real-time updates |
+| `/ui/nodes` | Add / disable / delete nodes; one-time secret shown on create |
+
+The dashboard matrix auto-updates via WebSocket on every new probe result
+(`POST /api/v1/results` → 201). The matrix also polls every 30 s via htmx as
+a fallback.
+
+The static CSS is embedded in the binary (`internal/ui/static/`). htmx is
+loaded from the unpkg CDN; self-host it for airgapped deployments by replacing
+the `<script>` tag in `internal/ui/layout.templ` and running `make templ`.
 
 ## Production deployment (Phase 6)
 

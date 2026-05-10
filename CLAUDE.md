@@ -53,7 +53,7 @@ that spec — update them if the user provides a newer revision.
 | 4 | `/readyz` + WS ticket auth + Prometheus metrics | Done |
 | 5 | Hub mode, controller-managed targets, admin REST API | Done |
 | 6 | Ops: systemd, Caddy, Litestream, Terraform, Litestream journal watcher | Done |
-| 7 | Web UI (templ + htmx + WebSocket) | Pending |
+| 7 | Web UI (templ + htmx + WebSocket) | Done |
 
 Always re-confirm against `README.md` if this table looks stale —
 README is the user-facing source of truth for status; this file is the
@@ -109,6 +109,21 @@ make tidy       # go mod tidy
 
 `golangci-lint` v2 config schema differs from v1 — keep `.golangci.yml`
 on `version: "2"` syntax.
+
+## Phase 7 UI notes
+
+- **templ workflow**: edit `internal/ui/*.templ` → run `make templ` → commit both `.templ`
+  and `*_templ.go`. The generated files must be committed so `go build` works without the
+  templ CLI installed.
+- **Static assets**: CSS is embedded in the binary via `//go:embed static` in `internal/ui/static.go`.
+  htmx is loaded from unpkg CDN in `layout.templ`; swap for a local copy in airgapped envs.
+- **Session auth**: `/ui/login` validates the admin token and sets `nlm_session` cookie
+  (HttpOnly, SameSite=Strict). No separate session store — cookie value IS the token,
+  compared constant-time on every request. Full session management deferred to spec Phase 2.
+- **UI WS**: `/api/v1/ui/ws` (separate from agent `/api/v1/ws`). Cookie-authenticated.
+  `WSHub` broadcasts `ProbeEvent` JSON on every 201 from `POST /api/v1/results`.
+- **Matrix data**: 5-minute rolling average from `probe_results`, hub nodes only. Also
+  served as an htmx fragment at `GET /ui/frag/matrix` (polled every 30 s by the dashboard).
 
 ## Phase 6 ops notes
 

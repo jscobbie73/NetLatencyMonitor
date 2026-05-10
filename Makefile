@@ -1,4 +1,4 @@
-.PHONY: all build test lint tidy clean agent controller cover install
+.PHONY: all build test lint tidy clean agent controller cover install templ
 
 GO          ?= go
 BIN_DIR     := bin
@@ -25,6 +25,9 @@ cover:
 
 lint:
 	@command -v golangci-lint >/dev/null 2>&1 && golangci-lint run || echo "golangci-lint not installed; skipping"
+
+templ:
+	go run github.com/a-h/templ/cmd/templ@v0.3.898 generate ./internal/ui/
 
 tidy:
 	$(GO) mod tidy

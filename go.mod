@@ -14,6 +14,7 @@ require (
 )
 
 require (
+	github.com/a-h/templ v0.3.898 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

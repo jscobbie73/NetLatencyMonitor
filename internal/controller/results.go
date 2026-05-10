@@ -106,6 +106,9 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 			s.metrics.ProbeResultsTotal.Add(float64(len(req.Results)))
 		}
 	}
+	if status == http.StatusCreated {
+		s.broadcastResults(nodeID, req.Results)
+	}
 
 	s.observeIngest(nodeID, status, start)
 	s.log.Info().

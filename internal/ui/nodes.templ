@@ -1,0 +1,140 @@
+package ui
+
+import "fmt"
+
+templ Nodes(nodes []NodeInfo, secret string) {
+	@layout("Nodes") {
+		<div class="page-header">
+			<div>
+				<h1>Nodes</h1>
+				<p class="subtitle">Manage agent nodes. Hub nodes form the probe mesh.</p>
+			</div>
+			<button
+				class="btn-primary"
+				hx-get="/ui/frag/nodes/new"
+				hx-target="#create-slot"
+				hx-swap="innerHTML"
+			>+ Add Node</button>
+		</div>
+		if secret != "" {
+			<div class="secret-box">
+				<p>⚠ Save this secret — it will not be shown again.</p>
+				<span class="secret-value">{ secret }</span>
+			</div>
+		}
+		<div id="create-slot"></div>
+		<div id="nodes-table-wrap">
+			@NodesTable(nodes)
+		</div>
+	}
+}
+
+// NodesTable renders the nodes list as an HTML table. Served both as a full
+// page fragment (via /ui/frag/nodes) and inline by Nodes above.
+templ NodesTable(nodes []NodeInfo) {
+	<div id="nodes-table-wrap">
+		<table class="nodes-table">
+			<thead>
+				<tr>
+					<th>ID</th>
+					<th>Role</th>
+					<th>Address</th>
+					<th>Status</th>
+					<th>Spool</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				if len(nodes) == 0 {
+					<tr><td colspan="6" class="empty">No nodes provisioned yet.</td></tr>
+				}
+				for _, n := range nodes {
+					@NodeRow(n)
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+// NodeRow renders a single node row — also returned by the disable/enable
+// fragment handlers so htmx can swap just that row in place.
+templ NodeRow(n NodeInfo) {
+	<tr id={ "node-" + n.ID }>
+		<td class="mono">{ n.ID }</td>
+		<td><span class={ "badge badge-" + n.Role }>{ n.Role }</span></td>
+		<td class="mono">{ n.Address }</td>
+		<td>
+			if n.Disabled {
+				<span class="badge badge-disabled">Disabled</span>
+			} else {
+				<span class="badge badge-active">Active</span>
+			}
+		</td>
+		<td>{ fmt.Sprintf("%d", n.SpoolDepth) }</td>
+		<td class="actions">
+			if n.Disabled {
+				<button
+					class="btn-secondary btn-sm"
+					hx-patch={ "/ui/frag/nodes/" + n.ID + "/enable" }
+					hx-target={ "#node-" + n.ID }
+					hx-swap="outerHTML"
+				>Enable</button>
+			} else {
+				<button
+					class="btn-danger btn-sm"
+					hx-patch={ "/ui/frag/nodes/" + n.ID + "/disable" }
+					hx-target={ "#node-" + n.ID }
+					hx-swap="outerHTML"
+				>Disable</button>
+			}
+			<button
+				class="btn-danger btn-sm"
+				hx-delete={ "/ui/frag/nodes/" + n.ID }
+				hx-confirm={ "Delete node " + n.ID + "? This cannot be undone." }
+				hx-target={ "#node-" + n.ID }
+				hx-swap="outerHTML"
+			>Delete</button>
+		</td>
+	</tr>
+}
+
+templ CreateNodeForm() {
+	<form
+		class="create-form"
+		hx-post="/ui/frag/nodes"
+		hx-target="#nodes-table-wrap"
+		hx-swap="outerHTML"
+	>
+		<h2>Add Node</h2>
+		<div class="form-row">
+			<label>
+				ID
+				<input type="text" name="id" placeholder="hub-nyc1" required/>
+			</label>
+			<label>
+				Role
+				<select name="role">
+					<option value="hub">hub</option>
+					<option value="spoke">spoke</option>
+					<option value="listener">listener</option>
+				</select>
+			</label>
+			<label>
+				Address <small>(hub only, host:port)</small>
+				<input type="text" name="address" placeholder="203.0.113.1:8444"/>
+			</label>
+			<label>
+				Secret <small>(blank = auto-generate)</small>
+				<input type="text" name="secret" placeholder="auto"/>
+			</label>
+		</div>
+		<div class="form-actions">
+			<button type="submit" class="btn-primary">Create</button>
+			<button
+				type="button"
+				class="btn-secondary"
+				onclick="document.getElementById('create-slot').innerHTML=''"
+			>Cancel</button>
+		</div>
+	</form>
+}
