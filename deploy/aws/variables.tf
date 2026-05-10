@@ -16,11 +16,16 @@ variable "litestream_s3_bucket" {
 }
 
 variable "controller_domain" {
-  description = "Fully-qualified domain name pointing to the controller Elastic IP (Caddy uses this for TLS)"
+  description = "Fully-qualified domain name for the controller (Caddy uses this for TLS). Must be within the Route 53 hosted zone."
   type        = string
 }
 
 variable "acme_email" {
   description = "Email address for Let's Encrypt certificate notifications"
+  type        = string
+}
+
+variable "route53_zone_id" {
+  description = "Route 53 Hosted Zone ID that owns controller_domain. Terraform will create the A record automatically."
   type        = string
 }

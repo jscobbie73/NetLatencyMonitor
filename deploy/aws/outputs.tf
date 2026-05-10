@@ -1,5 +1,5 @@
 output "controller_ip" {
-  description = "Elastic IP of the NLM controller (point your DNS A record here)"
+  description = "Elastic IP of the NLM controller (managed by Route 53 A record)"
   value       = aws_eip.controller.public_ip
 }
 
@@ -45,17 +45,22 @@ output "litestream_secret_access_key" {
 }
 
 output "controller_url" {
-  description = "HTTPS URL of the controller (requires DNS to be pointed at controller_ip)"
+  description = "HTTPS URL of the controller (Route 53 A record is created by Terraform)"
   value       = "https://${var.controller_domain}"
+}
+
+output "route53_record_fqdn" {
+  description = "FQDN of the Route 53 A record created for the controller"
+  value       = aws_route53_record.controller.fqdn
 }
 
 output "node_summary" {
   description = "All nodes with their IPs and roles — paste into scripts/deploy.sh"
   value = {
-    controller = aws_eip.controller.public_ip
-    hub_use1   = aws_eip.hub_use1.public_ip
-    hub_usw1   = aws_eip.hub_usw1.public_ip
-    hub_euc1   = aws_eip.hub_euc1.public_ip
+    controller  = aws_eip.controller.public_ip
+    hub_use1    = aws_eip.hub_use1.public_ip
+    hub_usw1    = aws_eip.hub_usw1.public_ip
+    hub_euc1    = aws_eip.hub_euc1.public_ip
     spoke_apse1 = aws_instance.spoke_apse1.public_ip
     spoke_apne1 = aws_instance.spoke_apne1.public_ip
     spoke_sae1  = aws_instance.spoke_sae1.public_ip

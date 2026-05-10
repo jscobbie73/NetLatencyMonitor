@@ -3,15 +3,16 @@
 This guide walks you through deploying NetLatencyMonitor to 7 AWS EC2 t3.micro instances
 spread across 6 regions: a controller in us-east-1, three hubs (us-east-1, us-west-1,
 eu-central-1), and three spokes (ap-southeast-1 / Singapore, ap-northeast-1 / Tokyo,
-sa-east-1 / São Paulo).
+sa-east-1 / São Paulo). All supporting services (DNS, object storage, TLS certificates)
+use AWS-native equivalents.
 
 ```
                         ┌──────────────────────────────────────────┐
                         │  CONTROLLER  (us-east-1)                 │
                         │  nlm-controller + Caddy + Litestream      │
-                        │  Elastic IP → your-domain.com            │
+                        │  Elastic IP ← Route 53 A record          │
                         └───────────┬──────────────────────────────┘
-                                    │  HTTPS (TLS via Caddy)
+                                    │  HTTPS (TLS via Caddy + Let's Encrypt)
           ┌─────────────────────────┼─────────────────────────┐
           │                         │                         │
   ┌───────▼────────┐    ┌───────────▼──────┐    ┌────────────▼─────┐
@@ -28,6 +29,17 @@ sa-east-1 / São Paulo).
                                    (São Paulo)
 ```
 
+## AWS Services Used
+
+| Service | Purpose |
+|---------|---------|
+| EC2 (t3.micro) | 7 compute nodes across 6 regions |
+| Elastic IPs | Static IPs for controller + 3 hubs |
+| S3 | Litestream SQLite WAL replication |
+| IAM | Scoped credentials for Litestream S3 access |
+| Route 53 | DNS A record for the controller domain (managed by Terraform) |
+| Let's Encrypt (via Caddy) | Automatic TLS certificate for the controller |
+
 ## Prerequisites
 
 | Tool | Version | Install |
@@ -38,13 +50,38 @@ sa-east-1 / São Paulo).
 | jq | 1.6+ | `apt install jq` / `brew install jq` |
 | An SSH key pair | — | `ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519` |
 
+### AWS account requirements
+
 Your AWS credentials must have permission to create EC2 instances, EIPs, IAM users,
-S3 buckets, and security groups. The simplest approach is to use a profile with
-`AdministratorAccess` during initial provisioning.
+S3 buckets, security groups, and Route 53 records. A profile with `AdministratorAccess`
+is the simplest option for initial provisioning.
 
 ```bash
-aws configure          # or set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+aws configure          # or export AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
 aws sts get-caller-identity   # verify credentials work
+```
+
+### Route 53 hosted zone
+
+You need a domain managed in Route 53. If you don't have one:
+
+```bash
+# Option A — register a new domain directly in Route 53 (~$12/year for .com)
+# Open the AWS Console → Route 53 → Register Domain
+
+# Option B — delegate an existing domain to Route 53
+# Create a hosted zone, then update your registrar's nameservers to the
+# four NS records Route 53 assigns to the zone.
+```
+
+Find your Hosted Zone ID once the zone exists:
+
+```bash
+aws route53 list-hosted-zones-by-name \
+  --dns-name example.com \
+  --query "HostedZones[0].Id" \
+  --output text
+# returns /hostedzone/Z1234567890ABC — use only the trailing ID: Z1234567890ABC
 ```
 
 ## Step 1 — Build the binaries
@@ -55,8 +92,7 @@ make build
 ```
 
 This produces `bin/nlm-controller` and `bin/nlm-agent` for the host platform.
-`scripts/deploy.sh` cross-compiles for `linux/amd64` automatically, so you don't
-need to build manually before deploying — but a local build is a good sanity check.
+`scripts/deploy.sh` cross-compiles for `linux/amd64` automatically.
 
 ## Step 2 — Choose a unique S3 bucket name
 
@@ -72,77 +108,88 @@ Keep this name handy; you'll need it in Step 3.
 
 ## Step 3 — Configure Terraform variables
 
+Create `deploy/aws/terraform.tfvars`:
+
 ```bash
 cd deploy/aws
-cp terraform.tfvars.example terraform.tfvars   # see below for creating this file
-```
-
-Create `deploy/aws/terraform.tfvars` with your values:
-
-```hcl
+cat > terraform.tfvars <<'EOF'
 # Path to the SSH public key to install on every node
 ssh_public_key_path = "~/.ssh/id_ed25519.pub"
 
-# NLM admin token — pick a strong random string (used to log in to the web UI)
+# NLM admin token — use a strong random string (openssl rand -hex 32)
 admin_token = "CHANGE_ME_strong_random_token_here"
 
 # S3 bucket for Litestream (must be globally unique)
 litestream_s3_bucket = "nlm-backup-<your-initials>-<suffix>"
 
-# Fully-qualified domain name you'll point at the controller's Elastic IP
+# Fully-qualified domain name within your Route 53 hosted zone
 # Caddy uses this to obtain a Let's Encrypt TLS certificate
 controller_domain = "nlm.example.com"
 
-# Email for Let's Encrypt notifications
+# Route 53 Hosted Zone ID for the domain above (Z...)
+route53_zone_id = "Z1234567890ABC"
+
+# Email for Let's Encrypt certificate expiry notifications
 acme_email = "you@example.com"
+EOF
 ```
 
-> `terraform.tfvars` is in `.gitignore` — never commit it; it contains secrets.
+> `terraform.tfvars` is gitignored — never commit it; it contains secrets.
+
+Generate a strong admin token with:
+
+```bash
+openssl rand -hex 32
+```
 
 ## Step 4 — Provision infrastructure
 
 ```bash
 cd deploy/aws
 terraform init
-terraform plan    # review what will be created (≈ 40 resources)
+terraform plan    # review what will be created (≈ 41 resources)
 terraform apply   # type "yes" when prompted
 ```
 
 Terraform creates:
 - 7 EC2 t3.micro instances (Ubuntu 24.04 LTS)
 - 4 Elastic IPs (controller + 3 hubs)
-- 6 key pairs (one per region)
+- 6 SSH key pairs (one per region)
 - 6 security groups (one per region)
 - 1 S3 bucket with versioning + AES-256 SSE
 - 1 IAM user (`nlm-litestream`) with a scoped S3 policy + access key
+- 1 Route 53 A record: `controller_domain` → controller Elastic IP (TTL 60s)
 
 `apply` typically finishes in 3–5 minutes.
 
-After apply, note the outputs:
+After apply, confirm the outputs:
 
 ```bash
-terraform output node_summary          # all IPs
-terraform output controller_ip         # the IP you'll point DNS at
-terraform output litestream_secret_access_key   # sensitive — shown once
+terraform output node_summary            # all node IPs
+terraform output controller_url          # https://nlm.example.com
+terraform output route53_record_fqdn    # confirms the DNS record was created
+terraform output litestream_secret_access_key   # sensitive — store securely
 ```
 
-## Step 5 — Point your DNS A record
+## Step 5 — Verify DNS propagation
 
-Log in to your DNS provider and create an **A record**:
-
-```
-nlm.example.com   →   <controller_ip from Step 4>
-TTL: 60 (low TTL so you can change quickly if needed)
-```
-
-DNS propagation usually takes 1–5 minutes. Verify with:
+Terraform creates the Route 53 record automatically. Route 53 changes are typically
+visible within 60 seconds. Verify before proceeding:
 
 ```bash
+# Check directly against the Route 53 authoritative nameservers (instant)
+ZONE_ID="Z1234567890ABC"
+NS=$(aws route53 get-hosted-zone --id $ZONE_ID \
+  --query "DelegationSet.NameServers[0]" --output text)
+dig +short nlm.example.com @$NS
+# should return the controller Elastic IP immediately
+
+# Check public resolution (may take up to 60s for SERVFAIL to clear)
 dig +short nlm.example.com
-# should return the controller Elastic IP
 ```
 
-You can proceed to Step 6 while DNS propagates; Caddy will retry ACME until it succeeds.
+You can proceed to Step 6 while public resolution catches up — Caddy will retry
+the ACME challenge automatically once DNS resolves correctly.
 
 ## Step 6 — Deploy the application
 
@@ -151,7 +198,7 @@ writes env files, registers all nodes via the admin API, and starts systemd serv
 
 ```bash
 cd <repo-root>
-export NLM_ADMIN_TOKEN="CHANGE_ME_strong_random_token_here"   # same as terraform.tfvars
+export NLM_ADMIN_TOKEN="CHANGE_ME_strong_random_token_here"   # same value as terraform.tfvars
 scripts/deploy.sh
 ```
 
@@ -175,11 +222,11 @@ What the script does, in order:
    field; spokes do not). Each registration returns a one-time minted secret.
 8. Writes `/etc/nlm/agent.env` on each agent node with the minted secret
 9. Starts `nlm-agent-listener` + `nlm-agent-hub` on hubs; enables the spoke timer on spokes
-10. Enables Caddy on the controller (TLS certificate is obtained automatically)
+10. Enables Caddy on the controller (Let's Encrypt certificate obtained automatically)
 
 The script is **idempotent for re-deploys** except for node registration: if a node was
-already registered the script skips re-registering it and logs a warning. If you need to
-rotate secrets, delete and re-add the node via the admin API or web UI.
+already registered the script skips re-registering it and logs a warning. Rotate secrets
+by deleting and re-adding the node via the admin API or web UI.
 
 Expected output (truncated):
 
@@ -204,30 +251,34 @@ Expected output (truncated):
 ### Controller health
 
 ```bash
-CTRL_IP=$(cd deploy/aws && terraform output -raw controller_ip)
+CONTROLLER_URL=$(cd deploy/aws && terraform output -raw controller_url)
 
 # Basic health (no auth required)
-curl https://nlm.example.com/healthz
+curl "${CONTROLLER_URL}/healthz"
 
-# Readiness (chrony + Litestream lag check)
-curl https://nlm.example.com/readyz
+# Readiness (chrony + Litestream lag check — may return 503 for ~30s on first start)
+curl "${CONTROLLER_URL}/readyz"
 
-# Prometheus metrics (gate with NLM_METRICS_TOKEN if set)
-curl https://nlm.example.com/metrics | grep nlm_
+# Prometheus metrics
+curl "${CONTROLLER_URL}/metrics" | grep nlm_
 ```
 
 ### Web UI
 
-Open `https://nlm.example.com/ui/login` in a browser and enter the `admin_token`
-from `terraform.tfvars`.
+Open the controller URL in a browser and navigate to `/ui/login`. Enter the
+`admin_token` from `terraform.tfvars`.
+
+```bash
+echo "Open: $(cd deploy/aws && terraform output -raw controller_url)/ui/login"
+```
 
 | Page | What you see |
 |------|--------------|
 | `/ui/` | Live latency matrix — hub × hub, 5-min rolling average, WebSocket real-time updates |
 | `/ui/nodes` | All 7 nodes; add / disable / delete via the UI |
 
-Wait 1–2 minutes after deploy for the first spoke cycles to complete; the matrix will
-start populating as probe results arrive.
+Wait 1–2 minutes for the first spoke cycles to complete; the matrix will start
+populating as probe results arrive.
 
 ### SSH into a node
 
@@ -254,25 +305,34 @@ ssh -i $SSH_KEY ubuntu@$(cd deploy/aws && terraform output -raw spoke_apse1_ip)
 Re-run `scripts/deploy.sh` after `git pull && make build`. The script skips node
 registration (nodes already exist) and restarts services cleanly.
 
+### Updating the Route 53 record
+
+The Route 53 A record is Terraform-managed. If you replace the controller instance
+(new EIP), run `terraform apply` — it will update the record automatically.
+
 ### Adding a new node
 
 1. Add the EC2 instance + security group + EIP to `deploy/aws/main.tf` and `outputs.tf`
 2. `terraform apply`
 3. Register the node via the web UI or admin API
-4. Push binaries + env files manually (or extend `scripts/deploy.sh`)
+4. Run `scripts/deploy.sh` (idempotent — existing nodes are skipped)
 
 ### Rotating the admin token
 
-Update `NLM_ADMIN_TOKEN` in `/etc/nlm/controller.env` on the controller, then
-`sudo systemctl restart nlm-controller`. The web UI session cookie will be invalidated
-(users must log in again).
+1. Generate a new token: `openssl rand -hex 32`
+2. Update `NLM_ADMIN_TOKEN` in `/etc/nlm/controller.env` on the controller
+3. `sudo systemctl restart nlm-controller`
+4. The web UI session cookie is invalidated — all users must log in again
 
 ### Litestream restore
 
-If the controller's SQLite database is lost, Litestream can restore it from S3:
+If the controller's SQLite database is lost, restore from S3:
 
 ```bash
+BUCKET=$(cd deploy/aws && terraform output -raw node_summary | jq -r '.controller')
 # SSH into the controller
+ssh -i ~/.ssh/id_ed25519 ubuntu@$CTRL_IP
+
 sudo systemctl stop nlm-controller nlm-litestream
 sudo -u nlm litestream restore \
   -config /etc/litestream/litestream.yml \
@@ -280,25 +340,37 @@ sudo -u nlm litestream restore \
 sudo systemctl start nlm-litestream nlm-controller
 ```
 
+Verify the S3 backup contents directly:
+
+```bash
+aws s3 ls s3://<your-bucket>/db/ --recursive | tail -5
+```
+
 ### Teardown
 
 ```bash
 cd deploy/aws
-terraform destroy    # destroys all 7 instances, EIPs, bucket, IAM user
+# Empty the S3 bucket first (terraform destroy will fail otherwise)
+BUCKET=$(terraform output -raw node_summary | python3 -c \
+  "import sys,json; d=json.load(sys.stdin); print(list(d.values())[0])" 2>/dev/null || echo "")
+aws s3 rm s3://$(terraform show -json | \
+  python3 -c "import sys,json; r=json.load(sys.stdin)['values']['root_module']['resources']; \
+  print(next(x['values']['bucket'] for x in r if x['type']=='aws_s3_bucket'))") --recursive
+
+terraform destroy    # destroys all EC2, EIPs, S3 bucket, IAM user, Route 53 record
 ```
 
-> The S3 bucket will fail to destroy if it still contains objects. Empty it first:
-> `aws s3 rm s3://<bucket> --recursive`
+## Cost estimate (on-demand pricing, May 2026)
 
-## Cost estimate (us-east-1 on-demand pricing, May 2026)
+| Resource | Detail | $/month |
+|----------|--------|---------|
+| EC2 t3.micro × 7 | ~$0.0104/hr each | ~$53 |
+| Elastic IPs (attached) | 4 attached to running instances | $0 |
+| gp3 EBS | 20 GB controller + 6 × 10 GB agents | ~$6.40 |
+| S3 | WAL segments + snapshots (< 1 GB typical) | < $1 |
+| Route 53 hosted zone | $0.50/zone + $0.40/1M queries | < $1 |
+| Data transfer | Cross-region probe traffic (minimal) | ~$1–3 |
+| **Total** | | **~$62/month** |
 
-| Resource | Count | $/month |
-|----------|-------|---------|
-| t3.micro EC2 | 7 | ~$7 × 7 = $49 |
-| Elastic IPs (attached) | 4 | $0 |
-| gp3 EBS (controller 20 GB + 6×10 GB) | 80 GB | ~$6.40 |
-| S3 + data transfer | — | < $1 |
-| **Total** | | **~$56/month** |
-
-Spoke instances (3) don't need Elastic IPs since the controller only needs to reach
-hubs (the spokes initiate outbound connections only).
+Spoke instances do not need Elastic IPs — they only initiate outbound connections
+to hubs and the controller.

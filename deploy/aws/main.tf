@@ -239,6 +239,19 @@ resource "aws_eip" "controller" {
   tags     = { Name = "nlm-controller"; app = "nlm" }
 }
 
+# ── Route 53 DNS record ────────────────────────────────────────────────────────
+# Creates the A record for controller_domain automatically so no manual DNS
+# step is required. Route 53 is the default DNS provider for this deployment.
+
+resource "aws_route53_record" "controller" {
+  provider = aws.use1
+  zone_id  = var.route53_zone_id
+  name     = var.controller_domain
+  type     = "A"
+  ttl      = 60
+  records  = [aws_eip.controller.public_ip]
+}
+
 resource "aws_instance" "hub_use1" {
   provider                    = aws.use1
   ami                         = data.aws_ami.ubuntu_use1.id
