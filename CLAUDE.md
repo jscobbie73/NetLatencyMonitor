@@ -52,7 +52,7 @@ that spec — update them if the user provides a newer revision.
 | 3 | Agent end-to-end: spoke + listener, UUIDv7 IDs | Done |
 | 4 | `/readyz` + WS ticket auth + Prometheus metrics | Done |
 | 5 | Hub mode, controller-managed targets, admin REST API | Done |
-| 6 | Ops: systemd, Caddy, Litestream, Terraform | Pending |
+| 6 | Ops: systemd, Caddy, Litestream, Terraform, Litestream journal watcher | Done |
 | 7 | Web UI (templ + htmx + WebSocket) | Pending |
 
 Always re-confirm against `README.md` if this table looks stale —
@@ -109,6 +109,24 @@ make tidy       # go mod tidy
 
 `golangci-lint` v2 config schema differs from v1 — keep `.golangci.yml`
 on `version: "2"` syntax.
+
+## Phase 6 ops notes
+
+- **Deploy layout**: all ops artefacts live under `deploy/` (systemd/, caddy/,
+  litestream/, terraform/). Never scatter unit files into `cmd/` or `internal/`.
+- **Terraform provider**: Hetzner Cloud (`hetznercloud/hcloud ~> 1.49`). The
+  `for_each` over `var.agent_locations` makes it easy to add/remove nodes by
+  editing the map — no code changes.
+- **Litestream watcher**: `internal/litestream.Watcher` polls `systemctl is-active`
+  and `journalctl --since` on each tick; it drives the `Tracker` that `/readyz`
+  and `/metrics` consume. The `Querier` interface (same pattern as `chrony`) is
+  injectable for tests — no real systemd needed.
+- **`make install` DESTDIR support**: `DESTDIR` prefix lets you stage the install
+  into a temp dir (e.g. for packaging): `make install DESTDIR=/tmp/pkg`.
+- **Litestream env file**: `/etc/nlm/litestream.env` must contain
+  `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`,
+  `LITESTREAM_S3_BUCKET`, `LITESTREAM_S3_REGION`. For non-AWS stores also set
+  `LITESTREAM_S3_ENDPOINT`.
 
 ## Common gotchas
 

@@ -1,8 +1,10 @@
-.PHONY: all build test lint tidy clean agent controller cover
+.PHONY: all build test lint tidy clean agent controller cover install
 
-GO        ?= go
-BIN_DIR   := bin
-PKGS      := ./...
+GO          ?= go
+BIN_DIR     := bin
+PKGS        := ./...
+PREFIX      ?= /usr/local
+SYSTEMD_DIR ?= /etc/systemd/system
 
 all: lint test build
 
@@ -26,6 +28,17 @@ lint:
 
 tidy:
 	$(GO) mod tidy
+
+install: build
+	install -D -m 755 $(BIN_DIR)/nlm-agent      $(DESTDIR)$(PREFIX)/bin/nlm-agent
+	install -D -m 755 $(BIN_DIR)/nlm-controller  $(DESTDIR)$(PREFIX)/bin/nlm-controller
+	install -D -m 644 deploy/systemd/nlm-controller.service      $(DESTDIR)$(SYSTEMD_DIR)/nlm-controller.service
+	install -D -m 644 deploy/systemd/nlm-litestream.service      $(DESTDIR)$(SYSTEMD_DIR)/nlm-litestream.service
+	install -D -m 644 deploy/systemd/nlm-agent-hub.service       $(DESTDIR)$(SYSTEMD_DIR)/nlm-agent-hub.service
+	install -D -m 644 deploy/systemd/nlm-agent-listener.service  $(DESTDIR)$(SYSTEMD_DIR)/nlm-agent-listener.service
+	install -D -m 644 deploy/systemd/nlm-agent-spoke.service     $(DESTDIR)$(SYSTEMD_DIR)/nlm-agent-spoke.service
+	install -D -m 644 deploy/systemd/nlm-agent-spoke.timer       $(DESTDIR)$(SYSTEMD_DIR)/nlm-agent-spoke.timer
+	@echo "Run: systemctl daemon-reload"
 
 clean:
 	rm -rf $(BIN_DIR) coverage.out coverage.html

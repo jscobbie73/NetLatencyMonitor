@@ -1,0 +1,21 @@
+[Unit]
+Description=NetLatencyMonitor spoke probe (single cycle)
+Documentation=https://github.com/jscobbie73/netlatencymonitor
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=nlm
+Group=nlm
+EnvironmentFile=/etc/nlm/agent.env
+ExecStart=/usr/local/bin/nlm-agent --mode spoke --once
+
+ReadWritePaths=/var/lib/nlm
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+CapabilityBoundingSet=
+AmbientCapabilities=

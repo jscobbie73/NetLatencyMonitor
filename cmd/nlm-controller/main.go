@@ -2,7 +2,7 @@
 //
 // Phase 4 wires:
 //   - chrony fail-closed readiness gate
-//   - Litestream tracker (in-memory; producer wiring to journald in Phase 6)
+//   - Litestream tracker + Phase 6 journal watcher
 //   - WebSocket ticket store + 30s pruner
 //   - Per-IP ticket validation rate limiter
 //   - /metrics with optional NLM_METRICS_TOKEN
@@ -45,6 +45,8 @@ func main() {
 
 	chronyq := &chrony.CommandQuerier{Binary: cfg.ChronycBinary, Timeout: 2 * time.Second}
 	lstrack := litestream.NewTracker(cfg.MaxLitestreamLag())
+	lswatch := litestream.NewWatcher(lstrack, litestream.WatcherConfig{})
+	go lswatch.Run(ctx)
 
 	tickets := ticket.NewStore(ticket.DefaultTTL)
 	rl := ticket.NewRateLimiter(cfg.WSTicketRateLimit, ticket.DefaultWindow, ticket.DefaultBlockDuration)

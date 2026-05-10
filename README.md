@@ -13,7 +13,7 @@ full design; this README tracks what's been built so far.
 | 3 | Agent end-to-end: spoke + listener, UUIDv7 probe IDs, full HTTP outcome mapping | Done |
 | 4 | `/readyz` (chrony fail-closed + Litestream lag), WS ticket auth + per-IP rate limit, Prometheus metrics | Done |
 | 5 | Hub mode, controller-managed target list with version-piggyback, admin REST API | Done |
-| 6 | Ops: systemd units, Caddy, Litestream, Terraform | Pending |
+| 6 | Ops: systemd units, Caddy, Litestream config, Terraform (Hetzner), `make install`, Litestream journal watcher | Done |
 | 7 | Web UI (templ + htmx + WebSocket) | Pending |
 
 ## Build & test
@@ -104,19 +104,59 @@ NLM_LISTENER_LISTEN=:8444 ./bin/nlm-agent --mode listener
 - **Observability**: every metric named in spec §11.1 is exposed at
   `/metrics`, gated by an optional bearer token.
 
+## Production deployment (Phase 6)
+
+### Provision infrastructure
+
+```
+cd deploy/terraform
+cp terraform.tfvars.example terraform.tfvars   # fill in hcloud_token etc.
+terraform init && terraform apply
+```
+
+Terraform provisions a controller node + N agent nodes on Hetzner Cloud and
+outputs their IP addresses.
+
+### Install on each node
+
+```
+# Build locally, then scp binaries, or use CI artefacts.
+make install                     # copies bin/* + systemd units
+systemctl daemon-reload
+
+# Controller node:
+systemctl enable --now nlm-litestream nlm-controller
+
+# Agent nodes:
+systemctl enable --now nlm-agent-listener nlm-agent-hub
+systemctl enable --now nlm-agent-spoke.timer
+```
+
+Env files live in `/etc/nlm/` (controller.env, litestream.env, agent.env).
+The Litestream config lives in `/etc/litestream/litestream.yml`
+(see `deploy/litestream/litestream.yml`).
+
+The Caddy reverse-proxy config is in `deploy/caddy/Caddyfile` — copy it to
+`/etc/caddy/Caddyfile` and reload Caddy.
+
 ## Repository layout
 
 ```
 cmd/
 ├── nlm-agent/        # spoke / hub / listener modes
 └── nlm-controller/   # HTTP API + DB + metrics
+deploy/
+├── caddy/            # Caddyfile (TLS reverse proxy)
+├── litestream/       # litestream.yml (S3 replication)
+├── systemd/          # *.service + *.timer units
+└── terraform/        # Hetzner Cloud infra (main.tf, variables.tf, outputs.tf)
 internal/
 ├── agent/            # probe loop, HTTP sender, target cache, hub runner
 ├── chrony/           # `chronyc tracking` parser
 ├── config/           # env-var configuration loaders
 ├── controller/       # HTTP handlers, schema, admin API, WS
 ├── dbmigrate/        # shared golang-migrate runner
-├── litestream/       # replication health tracker
+├── litestream/       # replication health tracker + journal watcher
 ├── logging/          # zerolog wrapper
 ├── metrics/          # Prometheus registry
 ├── spool/            # agent write-ahead spool
