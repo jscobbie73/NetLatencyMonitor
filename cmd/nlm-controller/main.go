@@ -45,7 +45,11 @@ func main() {
 
 	chronyq := &chrony.CommandQuerier{Binary: cfg.ChronycBinary, Timeout: 2 * time.Second}
 	lstrack := litestream.NewTracker(cfg.MaxLitestreamLag())
-	lswatch := litestream.NewWatcher(lstrack, litestream.WatcherConfig{})
+	lswatch := litestream.NewWatcher(lstrack, litestream.WatcherConfig{
+		// Scan back MaxLitestreamLag on startup so the tracker seeds LastSyncAt
+		// from the journal before the first regular poll interval elapses.
+		InitialLookback: cfg.MaxLitestreamLag(),
+	})
 	go lswatch.Run(ctx)
 
 	tickets := ticket.NewStore(ticket.DefaultTTL)
@@ -65,6 +69,7 @@ func main() {
 		Metrics:          m,
 		MetricsToken:     cfg.MetricsToken,
 		AdminToken:       cfg.AdminToken,
+		WSAllowedOrigins: cfg.WSAllowedOrigins,
 	})
 
 	httpServer := &http.Server{

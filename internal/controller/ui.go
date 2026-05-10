@@ -168,19 +168,18 @@ func (s *Server) patchDisabled(w http.ResponseWriter, r *http.Request, disable b
 
 // ── UI WebSocket ──────────────────────────────────────────────────────────────
 
-var uiUpgrader = websocket.Upgrader{
-	ReadBufferSize:  512,
-	WriteBufferSize: 4096,
-	CheckOrigin:     func(*http.Request) bool { return true },
-}
-
 func (s *Server) handleUIWS(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || !constantTimeStringEq(c.Value, s.adminToken) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	conn, err := uiUpgrader.Upgrade(w, r, nil)
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  512,
+		WriteBufferSize: 4096,
+		CheckOrigin:     s.checkWSOrigin,
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -55,6 +56,10 @@ type Options struct {
 	// AdminToken, if non-empty, enables /api/v1/admin/* endpoints. Empty
 	// = admin API returns 503 (web UI prompts the operator to set it).
 	AdminToken string
+
+	// WSAllowedOrigins is the allowlist for WebSocket upgrade Origin checks.
+	// Empty means allow same-host + no-origin (CLI) only.
+	WSAllowedOrigins []string
 }
 
 // Server bundles the controller's HTTP dependencies. Construct with New
@@ -77,8 +82,13 @@ type Server struct {
 	metrics      *metrics.Metrics
 	metricsToken string
 
-	adminToken string
-	wsHub      *WSHub
+	adminToken       string
+	wsHub            *WSHub
+	wsAllowedOrigins []string
+
+	// dropsMu guards lastDropsByNode for concurrent ingest requests.
+	dropsMu         sync.Mutex
+	lastDropsByNode map[string]int64
 }
 
 // New wires a minimal Server. Use NewWithOptions for the full Phase 4 stack.
@@ -89,20 +99,22 @@ func New(db *sql.DB, log zerolog.Logger) *Server {
 // NewWithOptions wires a Server with the supplied dependencies.
 func NewWithOptions(db *sql.DB, log zerolog.Logger, opt Options) *Server {
 	s := &Server{
-		db:           db,
-		nodes:        NewNodeStore(db),
-		log:          log,
-		now:          func() time.Time { return time.Now().UTC() },
-		dbPath:       opt.DBPath,
-		chrony:       opt.Chrony,
-		maxDriftMS:   opt.MaxClockDriftMS,
-		litestream:   opt.Litestream,
-		maxLag:       opt.MaxLitestreamLag,
-		tickets:      opt.Tickets,
-		wsRateLimit:  opt.WSRateLimit,
-		metrics:      opt.Metrics,
-		metricsToken: opt.MetricsToken,
-		adminToken:   opt.AdminToken,
+		db:               db,
+		nodes:            NewNodeStore(db),
+		log:              log,
+		now:              func() time.Time { return time.Now().UTC() },
+		dbPath:           opt.DBPath,
+		chrony:           opt.Chrony,
+		maxDriftMS:       opt.MaxClockDriftMS,
+		litestream:       opt.Litestream,
+		maxLag:           opt.MaxLitestreamLag,
+		tickets:          opt.Tickets,
+		wsRateLimit:      opt.WSRateLimit,
+		metrics:          opt.Metrics,
+		metricsToken:     opt.MetricsToken,
+		adminToken:       opt.AdminToken,
+		wsAllowedOrigins: opt.WSAllowedOrigins,
+		lastDropsByNode:  make(map[string]int64),
 	}
 	if s.tickets == nil {
 		s.tickets = ticket.NewStore(0)

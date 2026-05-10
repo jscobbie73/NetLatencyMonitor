@@ -96,9 +96,10 @@ func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 	observedAt := s.now()
 	results := RunProbes(ctx, targets, s.cfg.ProbeTimeout)
 
-	depth, _ := s.spool.Depth(ctx)
-	oldestAge, _ := s.spool.OldestAge(ctx)
-	drops, _ := s.spool.DropsTotal(ctx)
+	// Use the post-drain snapshot from the *previous* cycle as SpoolMetadata.
+	// This satisfies spec §3.5: the reported depth/drops reflect actual state
+	// after drain, not a pre-drain estimate. First cycle reports zero values.
+	prevSnap, _ := s.spool.LastDrainSnapshot(ctx)
 
 	req := controller.ResultsRequest{
 		SourceID:   s.cfg.NodeID,
@@ -106,9 +107,9 @@ func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 		ObservedAt: observedAt,
 		Results:    results,
 		SpoolMetadata: controller.SpoolMetadata{
-			SpoolDepth:            depth + 1, // post-enqueue, pre-drain (§3.5)
-			SpoolOldestAgeSeconds: int(oldestAge.Seconds()),
-			SpoolDropsTotal:       drops,
+			SpoolDepth:            prevSnap.Depth,
+			SpoolOldestAgeSeconds: prevSnap.OldestAgeSecs,
+			SpoolDropsTotal:       prevSnap.DropsTotal,
 			DrainAttempt:          1,
 		},
 	}
@@ -136,6 +137,14 @@ func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 	}
 	if stats.Permanent > 0 {
 		s.log.Warn().Int("permanent_failures", stats.Permanent).Msg("spoke: rows have permanent failures (likely 4xx)")
+	}
+
+	// Persist post-drain snapshot for the next cycle's SpoolMetadata report.
+	postDepth, _ := s.spool.Depth(ctx)
+	postOldest, _ := s.spool.OldestAge(ctx)
+	postDrops, _ := s.spool.DropsTotal(ctx)
+	if saveErr := s.spool.SaveDrainSnapshot(ctx, postDepth, int(postOldest.Seconds()), postDrops); saveErr != nil {
+		s.log.Warn().Err(saveErr).Msg("spoke: save drain snapshot failed")
 	}
 
 	s.log.Info().

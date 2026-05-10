@@ -30,6 +30,11 @@ type WatcherConfig struct {
 	Service string
 	// PollInterval is how often to poll systemctl + journalctl (default 30s).
 	PollInterval time.Duration
+	// InitialLookback is how far back to scan the journal on the very first
+	// poll. Defaults to PollInterval, but should be set to MaxLitestreamLag so
+	// the tracker seeds LastSyncAt correctly after a controller restart even
+	// when the most recent sync happened before the last PollInterval window.
+	InitialLookback time.Duration
 	// Querier is the command runner. Nil → CommandQuerier (real system calls).
 	Querier Querier
 }
@@ -38,11 +43,12 @@ type WatcherConfig struct {
 //  1. Checking `systemctl is-active` on each tick → SetServiceActive.
 //  2. Scanning `journalctl` output since the last poll → RecordSync / RecordError.
 type Watcher struct {
-	tracker      *Tracker
-	service      string
-	pollInterval time.Duration
-	querier      Querier
-	lastPoll     time.Time
+	tracker         *Tracker
+	service         string
+	pollInterval    time.Duration
+	initialLookback time.Duration
+	querier         Querier
+	lastPoll        time.Time
 }
 
 // NewWatcher returns a Watcher that will drive tracker. Call Run to start it.
@@ -53,15 +59,19 @@ func NewWatcher(tracker *Tracker, cfg WatcherConfig) *Watcher {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 30 * time.Second
 	}
+	if cfg.InitialLookback <= 0 {
+		cfg.InitialLookback = cfg.PollInterval
+	}
 	q := cfg.Querier
 	if q == nil {
 		q = &CommandQuerier{}
 	}
 	return &Watcher{
-		tracker:      tracker,
-		service:      cfg.Service,
-		pollInterval: cfg.PollInterval,
-		querier:      q,
+		tracker:         tracker,
+		service:         cfg.Service,
+		pollInterval:    cfg.PollInterval,
+		initialLookback: cfg.InitialLookback,
+		querier:         q,
 	}
 }
 
@@ -92,7 +102,11 @@ func (w *Watcher) poll(ctx context.Context) {
 	since := w.lastPoll
 	w.lastPoll = time.Now()
 	if since.IsZero() {
-		since = w.lastPoll.Add(-w.pollInterval)
+		// First poll: use initialLookback (typically MaxLitestreamLag) so the
+		// tracker seeds LastSyncAt even if the most recent sync predates the
+		// normal PollInterval window. This prevents a false /readyz 503 on
+		// controller restart when Litestream has been replicating continuously.
+		since = w.lastPoll.Add(-w.initialLookback)
 	}
 
 	// journalctl --since accepts "YYYY-MM-DD HH:MM:SS" in local time.

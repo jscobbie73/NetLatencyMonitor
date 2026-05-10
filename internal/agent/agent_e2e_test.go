@@ -204,12 +204,12 @@ func TestSpokeEndToEnd(t *testing.T) {
 		Scan(&depthCol, &dropsCol); err != nil {
 		t.Fatal(err)
 	}
-	if depthCol != 1 {
-		// Per spec §3.5: spool_depth is reported "after the enqueue+drain
-		// step that produced this report" — but the agent reports its
-		// pre-drain depth (1, the row it just added) inside the payload.
-		// Either interpretation is defensible; the test just pins behavior.
-		t.Errorf("controller-stored spool_depth = %d, want 1 (post-enqueue, pre-drain)", depthCol)
+	if depthCol != 0 {
+		// Per spec §3.5: spool_depth is the post-drain snapshot from the
+		// *previous* cycle. On the very first cycle the snapshot is zero;
+		// the current cycle's row was enqueued and then drained successfully,
+		// so the stored value is the previous-cycle snapshot (0).
+		t.Errorf("controller-stored spool_depth = %d, want 0 (previous-cycle post-drain snapshot)", depthCol)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -85,9 +86,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
-		// Phase 7 will lock this down to known UI origins. For now allow same-
-		// origin (default) plus any if no Origin header (CLI clients).
-		CheckOrigin: func(r *http.Request) bool { return true },
+		CheckOrigin:     s.checkWSOrigin,
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -152,6 +151,36 @@ func (s *Server) serveWS(conn *websocket.Conn, nodeID string) {
 			}
 		}
 	}
+}
+
+// checkWSOrigin enforces the WebSocket upgrade origin policy per spec §3.3:
+//   - No Origin header (CLI / non-browser clients): always allowed.
+//   - Origin host matches the request Host: allowed (same-origin browser).
+//   - Origin is in s.wsAllowedOrigins: allowed (configured cross-origin).
+//   - All other origins: rejected.
+func (s *Server) checkWSOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // CLI / non-browser client
+	}
+	// Strip scheme to compare host portions.
+	originHost := origin
+	if i := strings.Index(origin, "://"); i >= 0 {
+		originHost = origin[i+3:]
+	}
+	// Strip path/query from origin host.
+	if i := strings.IndexAny(originHost, "/?#"); i >= 0 {
+		originHost = originHost[:i]
+	}
+	if strings.EqualFold(originHost, r.Host) {
+		return true // same-origin
+	}
+	for _, allowed := range s.wsAllowedOrigins {
+		if strings.EqualFold(origin, allowed) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) wsRejectAndCount(w http.ResponseWriter, ip, reason string, status int, msg string) {

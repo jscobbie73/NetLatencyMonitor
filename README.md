@@ -15,6 +15,7 @@ full design; this README tracks what's been built so far.
 | 5 | Hub mode, controller-managed target list with version-piggyback, admin REST API | Done |
 | 6 | Ops: systemd units, Caddy, Litestream config, Terraform (Hetzner), `make install`, Litestream journal watcher | Done |
 | 7 | Web UI (templ + htmx + WebSocket) — dashboard, node CRUD, real-time matrix | Done |
+| 8 | Spec v1.3 compliance hardening: post-drain spool metadata, drops metric delta tracking, metric label normalization, WS origin policy, Litestream startup seeding | Done |
 
 ## Build & test
 
@@ -42,6 +43,13 @@ NLM_CHRONYC_BINARY=/usr/bin/chronyc \
 Health: `GET /healthz`. Readiness: `GET /readyz` (fails closed if chrony
 isn't reachable). Metrics: `GET /metrics` (gate with `NLM_METRICS_TOKEN`
 in production).
+
+Optional controller env vars:
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `NLM_WS_ALLOWED_ORIGINS` | _(empty)_ | Comma-separated extra WebSocket origins to allow (same-host + no-origin always allowed) |
+| `NLM_LITESTREAM_MAX_LAG_SECONDS` | `300` | `/readyz` lag gate; also used as the startup journal lookback so tracker seeds correctly after restart |
 
 ### 2. Provision nodes via the admin API
 

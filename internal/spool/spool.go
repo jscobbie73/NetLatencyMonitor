@@ -149,6 +149,64 @@ func (s *Spool) OldestAge(ctx context.Context) (time.Duration, error) {
 	return s.now().Sub(t), nil
 }
 
+// DrainSnapshot is a post-drain spool state snapshot persisted between cycles.
+// It is reported to the controller as SpoolMetadata on the *next* cycle so the
+// controller sees accurate post-drain values rather than a pre-drain estimate.
+type DrainSnapshot struct {
+	Depth         int
+	OldestAgeSecs int
+	DropsTotal    int64
+}
+
+// LastDrainSnapshot returns the snapshot saved at the end of the previous
+// drain cycle. Returns zero values on the very first cycle.
+func (s *Spool) LastDrainSnapshot(ctx context.Context) (DrainSnapshot, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT key, value FROM spool_meta
+		  WHERE key IN ('last_depth','last_oldest_age_secs','last_drops_total')`)
+	if err != nil {
+		return DrainSnapshot{}, fmt.Errorf("spool: last drain snapshot: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var snap DrainSnapshot
+	for rows.Next() {
+		var k string
+		var v int64
+		if err := rows.Scan(&k, &v); err != nil {
+			return DrainSnapshot{}, fmt.Errorf("spool: last drain snapshot scan: %w", err)
+		}
+		switch k {
+		case "last_depth":
+			snap.Depth = int(v)
+		case "last_oldest_age_secs":
+			snap.OldestAgeSecs = int(v)
+		case "last_drops_total":
+			snap.DropsTotal = v
+		}
+	}
+	return snap, rows.Err()
+}
+
+// SaveDrainSnapshot persists the post-drain spool state for the next cycle.
+func (s *Spool) SaveDrainSnapshot(ctx context.Context, depth, oldestAgeSecs int, dropsTotal int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE spool_meta SET value = ? WHERE key = 'last_depth';`, depth)
+	if err != nil {
+		return fmt.Errorf("spool: save snapshot depth: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE spool_meta SET value = ? WHERE key = 'last_oldest_age_secs';`, oldestAgeSecs)
+	if err != nil {
+		return fmt.Errorf("spool: save snapshot oldest: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE spool_meta SET value = ? WHERE key = 'last_drops_total';`, dropsTotal)
+	if err != nil {
+		return fmt.Errorf("spool: save snapshot drops: %w", err)
+	}
+	return nil
+}
+
 // DropsTotal returns the persisted count of rows dropped by retention.
 func (s *Spool) DropsTotal(ctx context.Context) (int64, error) {
 	var v int64

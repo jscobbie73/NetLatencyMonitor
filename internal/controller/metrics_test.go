@@ -109,7 +109,7 @@ func TestIngestIncrementsMetrics(t *testing.T) {
 	s.Handler().ServeHTTP(rr, req)
 	body, _ := io.ReadAll(rr.Body)
 	got := string(body)
-	if !strings.Contains(got, `nlm_ingest_total{node_id="spoke-1",status="2xx"}`) {
+	if !strings.Contains(got, `nlm_ingest_total{node_id="spoke-1",status="201"}`) {
 		t.Errorf("ingest counter line not in scrape; body=\n%s", got)
 	}
 	if !strings.Contains(got, `nlm_node_spool_depth{node_id="spoke-1"}`) {

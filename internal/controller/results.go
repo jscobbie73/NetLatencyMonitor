@@ -96,12 +96,21 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		s.metrics.NodeSpoolDepth.WithLabelValues(nodeID).Set(float64(req.SpoolMetadata.SpoolDepth))
 		s.metrics.NodeSpoolOldestAgeSecs.WithLabelValues(nodeID).Set(float64(req.SpoolMetadata.SpoolOldestAgeSeconds))
 		s.metrics.NodeLastSeenSeconds.WithLabelValues(nodeID).Set(0)
-		// drops_total is a snapshot from the agent; only the delta is meaningful
-		// for a Prom counter, but on-controller restart we lose that history.
-		// Set the gauge equivalent via Add(0) is wrong; instead, expose the
-		// snapshot through the spool_drops_total counter by Add'ing the diff.
-		// Phase 2-friendly approximation: rely on the per-node snapshot in the
-		// nodes table for absolute values; the counter here is best-effort.
+
+		// drops_total from the agent is a cumulative snapshot. We track the
+		// last known value per node and only Add the delta so the Prometheus
+		// counter is monotonically increasing even across controller restarts.
+		// If reported < last (agent restarted and reset its counter), treat it
+		// as a reset: update the baseline without adding to the counter.
+		reported := req.SpoolMetadata.SpoolDropsTotal
+		s.dropsMu.Lock()
+		last := s.lastDropsByNode[nodeID]
+		if reported > last {
+			s.metrics.NodeSpoolDropsTotal.WithLabelValues(nodeID).Add(float64(reported - last))
+		}
+		s.lastDropsByNode[nodeID] = reported
+		s.dropsMu.Unlock()
+
 		if status == http.StatusCreated {
 			s.metrics.ProbeResultsTotal.Add(float64(len(req.Results)))
 		}
@@ -142,10 +151,12 @@ func (s *Server) observeIngest(nodeID string, status int, start time.Time) {
 
 func statusLabel(status int) string {
 	switch {
-	case status >= 200 && status < 300:
-		return "2xx"
+	case status == 201:
+		return "201"
+	case status == 409:
+		return "409"
 	case status >= 400 && status < 500:
-		return strconv.Itoa(status)
+		return "4xx"
 	case status >= 500:
 		return "5xx"
 	default:

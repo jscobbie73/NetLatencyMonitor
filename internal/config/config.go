@@ -253,6 +253,7 @@ type ControllerConfig struct {
 	MetricsToken         string
 	ChronycBinary        string
 	AdminToken           string
+	WSAllowedOrigins     []string // NLM_WS_ALLOWED_ORIGINS (comma-separated)
 }
 
 // LoadController reads controller env vars. Defaults are dev-friendly; in
@@ -273,6 +274,14 @@ func LoadController() (ControllerConfig, error) {
 		MetricsToken:  getString("NLM_METRICS_TOKEN", ""),
 		ChronycBinary: getString("NLM_CHRONYC_BINARY", "chronyc"),
 		AdminToken:    getString("NLM_ADMIN_TOKEN", ""),
+	}
+
+	if raw := getString("NLM_WS_ALLOWED_ORIGINS", ""); raw != "" {
+		for _, o := range strings.Split(raw, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				c.WSAllowedOrigins = append(c.WSAllowedOrigins, trimmed)
+			}
+		}
 	}
 	if c.DBPath == "" {
 		return c, fmt.Errorf("NLM_CONTROLLER_DB_PATH must not be empty")
