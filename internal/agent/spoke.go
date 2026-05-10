@@ -14,22 +14,48 @@ import (
 	"github.com/jscobbie73/netlatencymonitor/internal/spool"
 )
 
+// TargetSource yields the current probe target list. The spoke and hub
+// runners call it once per cycle. Implementations: a static list (env
+// config), or TargetCache (live from the controller).
+type TargetSource interface {
+	Targets(ctx context.Context) ([]config.Target, int64, error)
+}
+
+// staticTargets implements TargetSource against a fixed list — used when
+// NLM_PROBE_TARGETS is set, mostly for tests and dev.
+type staticTargets struct{ ts []config.Target }
+
+// Targets implements TargetSource.
+func (s staticTargets) Targets(_ context.Context) ([]config.Target, int64, error) {
+	return s.ts, 0, nil
+}
+
+// StaticTargets returns a TargetSource that always yields the same list.
+func StaticTargets(ts []config.Target) TargetSource { return staticTargets{ts: ts} }
+
 // Spoke is one probe-and-drain cycle as run by `nlm-agent --mode spoke`.
 type Spoke struct {
 	cfg      config.AgentConfig
 	spool    *spool.Spool
 	sender   spool.Sender
+	source   TargetSource
 	log      zerolog.Logger
 	now      func() time.Time
 	newRunID func() (string, error)
 }
 
-// NewSpoke wires a Spoke around an open spool and a Sender.
-func NewSpoke(cfg config.AgentConfig, sp *spool.Spool, sender spool.Sender, log zerolog.Logger) *Spoke {
+// NewSpoke wires a Spoke around an open spool, a Sender, and a target
+// source. If source is nil, the spoke falls back to the static list in
+// cfg.Targets (for tests / dev).
+func NewSpoke(cfg config.AgentConfig, sp *spool.Spool, sender spool.Sender, source TargetSource, log zerolog.Logger) *Spoke {
+	if source == nil {
+		source = StaticTargets(cfg.Targets)
+	}
 	return &Spoke{
 		cfg:    cfg,
 		spool:  sp,
 		sender: sender,
+		source: source,
 		log:    log,
 		now:    func() time.Time { return time.Now().UTC() },
 		newRunID: func() (string, error) {
@@ -54,8 +80,12 @@ type CycleStats struct {
 // Per spec §3.1, the drain step happens on every probe cycle so transient
 // outages catch up on the very next tick once connectivity returns.
 func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
-	if len(s.cfg.Targets) == 0 {
-		return CycleStats{}, errors.New("spoke: no probe targets configured")
+	targets, _, err := s.source.Targets(ctx)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("spoke: target source returned error; using cached/empty list")
+	}
+	if len(targets) == 0 {
+		return CycleStats{}, errors.New("spoke: no probe targets")
 	}
 
 	runID, err := s.newRunID()
@@ -64,7 +94,7 @@ func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 	}
 
 	observedAt := s.now()
-	results := RunProbes(ctx, s.cfg.Targets, s.cfg.ProbeTimeout)
+	results := RunProbes(ctx, targets, s.cfg.ProbeTimeout)
 
 	depth, _ := s.spool.Depth(ctx)
 	oldestAge, _ := s.spool.OldestAge(ctx)

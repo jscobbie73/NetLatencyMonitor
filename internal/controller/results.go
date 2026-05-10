@@ -116,8 +116,17 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		Dur("latency", time.Since(start)).
 		Msg("results: ingest")
 
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	// Echo the current targets_version so the agent can detect target-set
+	// changes without polling /api/v1/targets every cycle (Phase 5 design).
+	version, vErr := s.nodes.TargetsVersion(r.Context())
+	if vErr != nil {
+		s.log.Warn().Err(vErr).Msg("results: read targets_version")
+	}
+	resp := map[string]any{"status": "ok"}
+	if vErr == nil {
+		resp["targets_version"] = version
+	}
+	writeJSON(w, status, resp)
 }
 
 func (s *Server) observeIngest(nodeID string, status int, start time.Time) {

@@ -14,6 +14,13 @@ import (
 	"github.com/jscobbie73/netlatencymonitor/internal/spool"
 )
 
+// VersionNotifier is anything that wants to be told the controller's
+// current targets_version after a successful (or replayed) ingest. The
+// TargetCache implements it; see Phase 5 design notes.
+type VersionNotifier interface {
+	NoticeVersion(v int64)
+}
+
 // Client posts spooled probe results to the controller. It implements
 // spool.Sender so the agent's drain loop can call it directly.
 type Client struct {
@@ -21,6 +28,7 @@ type Client struct {
 	nodeID     string
 	secret     string
 	httpClient *http.Client
+	notifier   VersionNotifier
 }
 
 // NewClient builds an HTTP client targeting controllerURL.
@@ -43,6 +51,11 @@ func NewClient(controllerURL, nodeID, secret string, httpTimeout time.Duration) 
 		},
 	}
 }
+
+// SetVersionNotifier attaches a VersionNotifier so each successful or
+// replayed ingest informs the cache of the controller's current
+// targets_version.
+func (c *Client) SetVersionNotifier(n VersionNotifier) { c.notifier = n }
 
 // Send implements spool.Sender. Status code → outcome mapping per spec §3.1:
 //
@@ -78,8 +91,10 @@ func (c *Client) Send(ctx context.Context, probeRunID string, payload []byte) (s
 
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		c.notifyVersion(body)
 		return spool.OutcomeAccepted, nil
 	case resp.StatusCode == http.StatusConflict:
+		c.notifyVersion(body)
 		return spool.OutcomeAccepted, nil
 	case resp.StatusCode >= 400 && resp.StatusCode < 500:
 		return spool.OutcomePermanentFail, fmt.Errorf("%d %s: %s",
@@ -89,6 +104,23 @@ func (c *Client) Send(ctx context.Context, probeRunID string, payload []byte) (s
 			resp.StatusCode, http.StatusText(resp.StatusCode), trimBody(body))
 	default:
 		return spool.OutcomeTransientFail, errors.New("unexpected status: " + resp.Status)
+	}
+}
+
+// notifyVersion looks for a targets_version field in the response body and
+// forwards it to the attached VersionNotifier (if any).
+func (c *Client) notifyVersion(body []byte) {
+	if c.notifier == nil || len(body) == 0 {
+		return
+	}
+	var env struct {
+		TargetsVersion int64 `json:"targets_version"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		return
+	}
+	if env.TargetsVersion > 0 {
+		c.notifier.NoticeVersion(env.TargetsVersion)
 	}
 }
 

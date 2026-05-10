@@ -121,7 +121,7 @@ func TestSpokeEndToEnd(t *testing.T) {
 	defer func() { _ = sp.Close() }()
 
 	client := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.NodeSecret, cfg.HTTPTimeout)
-	sk := agent.NewSpoke(cfg, sp, client, zerolog.Nop())
+	sk := agent.NewSpoke(cfg, sp, client, agent.StaticTargets(cfg.Targets), zerolog.Nop())
 
 	stats, err := sk.Run(ctx)
 	if err != nil {
@@ -256,7 +256,7 @@ func TestSpokeReplayDrainsAcrossControllerRestart(t *testing.T) {
 	defer func() { _ = sp.Close() }()
 
 	client1 := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.NodeSecret, cfg.HTTPTimeout)
-	sk := agent.NewSpoke(cfg, sp, client1, zerolog.Nop())
+	sk := agent.NewSpoke(cfg, sp, client1, agent.StaticTargets(cfg.Targets), zerolog.Nop())
 
 	stats1, err := sk.Run(ctx)
 	if err != nil {

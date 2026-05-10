@@ -48,7 +48,9 @@ func main() {
 			log.Fatal().Err(err).Msg("listener failed")
 		}
 	case "hub":
-		log.Fatal().Msg("hub mode lands in Phase 5")
+		if err := runHub(ctx); err != nil {
+			log.Fatal().Err(err).Msg("hub failed")
+		}
 	default:
 		log.Fatal().Str("mode", *mode).Msg("unknown mode")
 	}
@@ -60,11 +62,69 @@ func runSpoke(ctx context.Context, once bool) error {
 	if err != nil {
 		return fmt.Errorf("load agent config: %w", err)
 	}
-	spCfg, err := config.LoadSpool()
+	sp, err := openSpool()
 	if err != nil {
-		return fmt.Errorf("load spool config: %w", err)
+		return err
+	}
+	defer func() { _ = sp.Close() }()
+
+	client := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.NodeSecret, cfg.HTTPTimeout)
+	source := buildTargetSource(cfg, client)
+	sk := agent.NewSpoke(cfg, sp, client, source, log)
+
+	if !once {
+		return errors.New("spoke daemon mode not implemented; use --once with the nlm-spoke.timer unit")
 	}
 
+	log.Info().Str("node_id", cfg.NodeID).Msg("spoke: running one cycle")
+	cycleCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	_, err = sk.Run(cycleCtx)
+	return err
+}
+
+func runHub(ctx context.Context) error {
+	log := logging.Init()
+	cfg, err := config.LoadAgent()
+	if err != nil {
+		return fmt.Errorf("load agent config: %w", err)
+	}
+	sp, err := openSpool()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sp.Close() }()
+
+	client := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.NodeSecret, cfg.HTTPTimeout)
+	source := buildTargetSource(cfg, client)
+	hub := agent.BuildHub(agent.HubDeps{
+		Cfg: cfg, Spool: sp, Sender: client, Source: source,
+		ProbeIv: cfg.HubProbeInterval, Jitter: cfg.StartupJitter, Log: log,
+	})
+	log.Info().
+		Str("node_id", cfg.NodeID).
+		Dur("probe_interval", cfg.HubProbeInterval).
+		Dur("refresh_interval", cfg.HubRefreshInterval).
+		Msg("hub: starting daemon")
+	return hub.Run(ctx)
+}
+
+// buildTargetSource picks between an env-supplied static list (handy for
+// tests / dev) and the live controller-fed cache.
+func buildTargetSource(cfg config.AgentConfig, client *agent.Client) agent.TargetSource {
+	if len(cfg.Targets) > 0 {
+		return agent.StaticTargets(cfg.Targets)
+	}
+	cache := agent.NewTargetCache(cfg.ControllerURL, cfg.NodeID, cfg.NodeSecret, cfg.HTTPTimeout, cfg.HubRefreshInterval)
+	client.SetVersionNotifier(cache)
+	return cache
+}
+
+func openSpool() (*spool.Spool, error) {
+	spCfg, err := config.LoadSpool()
+	if err != nil {
+		return nil, fmt.Errorf("load spool config: %w", err)
+	}
 	sp, err := spool.Open(spCfg.Path, spool.Config{
 		DrainRows:   spCfg.DrainRows,
 		MaxAge:      spCfg.MaxAge(),
@@ -73,24 +133,9 @@ func runSpoke(ctx context.Context, once bool) error {
 		BackoffMax:  spCfg.BackoffMax(),
 	})
 	if err != nil {
-		return fmt.Errorf("open spool: %w", err)
+		return nil, fmt.Errorf("open spool: %w", err)
 	}
-	defer func() { _ = sp.Close() }()
-
-	client := agent.NewClient(cfg.ControllerURL, cfg.NodeID, cfg.NodeSecret, cfg.HTTPTimeout)
-	sk := agent.NewSpoke(cfg, sp, client, log)
-
-	if !once {
-		// Daemon mode for spoke isn't part of v1.3 — the spoke is driven
-		// by a systemd timer per spec §6. Surface that explicitly.
-		return errors.New("spoke daemon mode not implemented; use --once with the nlm-spoke.timer unit")
-	}
-
-	log.Info().Str("node_id", cfg.NodeID).Int("targets", len(cfg.Targets)).Msg("spoke: running one cycle")
-	cycleCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-	_, err = sk.Run(cycleCtx)
-	return err
+	return sp, nil
 }
 
 func runListener(ctx context.Context) error {

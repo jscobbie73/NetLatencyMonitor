@@ -98,10 +98,14 @@ type AgentConfig struct {
 	NodeID        string
 	NodeSecret    string // resolved from env or NLM_NODE_SECRET_PATH
 	ControllerURL string
-	Targets       []Target
+	Targets       []Target // overrides controller-supplied targets when set
 	ProbeTimeout  time.Duration
 	HTTPTimeout   time.Duration
 	StartupJitter time.Duration
+
+	// Hub-mode specific.
+	HubProbeInterval   time.Duration // NLM_HUB_PROBE_INTERVAL (default 60s)
+	HubRefreshInterval time.Duration // NLM_HUB_REFRESH_INTERVAL (default 5m)
 }
 
 // LoadAgent reads agent env vars. Used by spoke and hub modes (Phases 3 / 5).
@@ -165,6 +169,24 @@ func LoadAgent() (AgentConfig, error) {
 		return c, fmt.Errorf("NLM_STARTUP_JITTER must be >= 0")
 	}
 	c.StartupJitter = time.Duration(jitterSecs) * time.Second
+
+	hubProbeSecs, err := getInt("NLM_HUB_PROBE_INTERVAL", 60)
+	if err != nil {
+		return c, err
+	}
+	if hubProbeSecs <= 0 {
+		return c, fmt.Errorf("NLM_HUB_PROBE_INTERVAL must be > 0")
+	}
+	c.HubProbeInterval = time.Duration(hubProbeSecs) * time.Second
+
+	hubRefreshSecs, err := getInt("NLM_HUB_REFRESH_INTERVAL", 300)
+	if err != nil {
+		return c, err
+	}
+	if hubRefreshSecs <= 0 {
+		return c, fmt.Errorf("NLM_HUB_REFRESH_INTERVAL must be > 0")
+	}
+	c.HubRefreshInterval = time.Duration(hubRefreshSecs) * time.Second
 
 	return c, nil
 }
@@ -230,6 +252,7 @@ type ControllerConfig struct {
 	WSTicketRateLimit    int
 	MetricsToken         string
 	ChronycBinary        string
+	AdminToken           string
 }
 
 // LoadController reads controller env vars. Defaults are dev-friendly; in
@@ -249,6 +272,7 @@ func LoadController() (ControllerConfig, error) {
 		BaseURL:       getString("NLM_CONTROLLER_BASE_URL", ""),
 		MetricsToken:  getString("NLM_METRICS_TOKEN", ""),
 		ChronycBinary: getString("NLM_CHRONYC_BINARY", "chronyc"),
+		AdminToken:    getString("NLM_ADMIN_TOKEN", ""),
 	}
 	if c.DBPath == "" {
 		return c, fmt.Errorf("NLM_CONTROLLER_DB_PATH must not be empty")

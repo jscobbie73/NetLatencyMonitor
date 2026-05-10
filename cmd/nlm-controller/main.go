@@ -62,6 +62,7 @@ func main() {
 		WSRateLimit:      rl,
 		Metrics:          m,
 		MetricsToken:     cfg.MetricsToken,
+		AdminToken:       cfg.AdminToken,
 	})
 
 	httpServer := &http.Server{

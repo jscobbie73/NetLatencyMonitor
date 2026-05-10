@@ -49,6 +49,10 @@ type Options struct {
 
 	// MetricsToken, if non-empty, gates /metrics with `Authorization: Bearer`.
 	MetricsToken string
+
+	// AdminToken, if non-empty, enables /api/v1/admin/* endpoints. Empty
+	// = admin API returns 503 (web UI prompts the operator to set it).
+	AdminToken string
 }
 
 // Server bundles the controller's HTTP dependencies. Construct with New
@@ -70,6 +74,8 @@ type Server struct {
 
 	metrics      *metrics.Metrics
 	metricsToken string
+
+	adminToken string
 }
 
 // New wires a minimal Server. Use NewWithOptions for the full Phase 4 stack.
@@ -93,6 +99,7 @@ func NewWithOptions(db *sql.DB, log zerolog.Logger, opt Options) *Server {
 		wsRateLimit:  opt.WSRateLimit,
 		metrics:      opt.Metrics,
 		metricsToken: opt.MetricsToken,
+		adminToken:   opt.AdminToken,
 	}
 	if s.tickets == nil {
 		s.tickets = ticket.NewStore(0)
@@ -109,8 +116,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 
 	mux.Handle("POST /api/v1/results", s.bearerAuth(http.HandlerFunc(s.handleResults)))
+	mux.Handle("GET /api/v1/targets", s.bearerAuth(http.HandlerFunc(s.handleTargets)))
 	mux.Handle("POST /api/v1/ws-ticket", s.bearerAuth(http.HandlerFunc(s.handleWSTicket)))
 	mux.HandleFunc("GET /api/v1/ws", s.handleWS)
+
+	mux.Handle("GET /api/v1/admin/nodes", s.adminAuth(http.HandlerFunc(s.handleAdminListNodes)))
+	mux.Handle("POST /api/v1/admin/nodes", s.adminAuth(http.HandlerFunc(s.handleAdminCreateNode)))
+	mux.Handle("PATCH /api/v1/admin/nodes/{id}", s.adminAuth(http.HandlerFunc(s.handleAdminPatchNode)))
+	mux.Handle("DELETE /api/v1/admin/nodes/{id}", s.adminAuth(http.HandlerFunc(s.handleAdminDeleteNode)))
 
 	if s.metrics != nil {
 		mux.Handle("GET /metrics", s.metrics.Handler(s.metricsToken, s.refreshMetrics))
