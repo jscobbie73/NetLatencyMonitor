@@ -1,8 +1,11 @@
 // nlm-controller is the central NLM API + UI server (spec §3.2).
 //
-// Phase 2 wires the HTTP surface and SQLite registry/results store. Chrony
-// gating, Litestream readiness, WebSocket ticket auth, /metrics, and the
-// web UI land in subsequent phases.
+// Phase 4 wires:
+//   - chrony fail-closed readiness gate
+//   - Litestream tracker (in-memory; producer wiring to journald in Phase 6)
+//   - WebSocket ticket store + 30s pruner
+//   - Per-IP ticket validation rate limiter
+//   - /metrics with optional NLM_METRICS_TOKEN
 package main
 
 import (
@@ -14,9 +17,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jscobbie73/netlatencymonitor/internal/chrony"
 	"github.com/jscobbie73/netlatencymonitor/internal/config"
 	"github.com/jscobbie73/netlatencymonitor/internal/controller"
+	"github.com/jscobbie73/netlatencymonitor/internal/litestream"
 	"github.com/jscobbie73/netlatencymonitor/internal/logging"
+	"github.com/jscobbie73/netlatencymonitor/internal/metrics"
+	"github.com/jscobbie73/netlatencymonitor/internal/ticket"
 )
 
 func main() {
@@ -33,7 +40,29 @@ func main() {
 	}
 	defer func() { _ = db.Close() }()
 
-	srv := controller.New(db, log)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	chronyq := &chrony.CommandQuerier{Binary: cfg.ChronycBinary, Timeout: 2 * time.Second}
+	lstrack := litestream.NewTracker(cfg.MaxLitestreamLag())
+
+	tickets := ticket.NewStore(ticket.DefaultTTL)
+	rl := ticket.NewRateLimiter(cfg.WSTicketRateLimit, ticket.DefaultWindow, ticket.DefaultBlockDuration)
+	go tickets.RunPruner(ctx, ticket.DefaultPruneInterval)
+
+	m := metrics.New()
+
+	srv := controller.NewWithOptions(db, log, controller.Options{
+		DBPath:           cfg.DBPath,
+		Chrony:           chronyq,
+		MaxClockDriftMS:  cfg.MaxClockDriftMS,
+		Litestream:       lstrack,
+		MaxLitestreamLag: cfg.MaxLitestreamLag(),
+		Tickets:          tickets,
+		WSRateLimit:      rl,
+		Metrics:          m,
+		MetricsToken:     cfg.MetricsToken,
+	})
 
 	httpServer := &http.Server{
 		Addr:              cfg.Listen,
@@ -44,11 +73,14 @@ func main() {
 		IdleTimeout:       2 * time.Minute,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	go func() {
-		log.Info().Str("listen", cfg.Listen).Str("db_path", cfg.DBPath).Msg("controller: starting")
+		log.Info().
+			Str("listen", cfg.Listen).
+			Str("db_path", cfg.DBPath).
+			Float64("max_drift_ms", cfg.MaxClockDriftMS).
+			Int("max_ls_lag_sec", cfg.MaxLitestreamLagSecs).
+			Bool("metrics_token", cfg.MetricsToken != "").
+			Msg("controller: starting")
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal().Err(err).Msg("controller: ListenAndServe")
 		}

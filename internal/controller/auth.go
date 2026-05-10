@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -63,6 +64,9 @@ func clientIP(r *http.Request) string {
 			return strings.TrimSpace(v[:i])
 		}
 		return strings.TrimSpace(v)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
 	}
 	return r.RemoteAddr
 }

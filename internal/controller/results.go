@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -47,27 +48,32 @@ type SpoolMetadata struct {
 //	401          — handled in middleware
 //	5xx          — transient; agent must retry
 func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	node, ok := nodeFromCtx(r.Context())
 	if !ok {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	nodeID := node.ID
 
 	var req ResultsRequest
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
+		s.observeIngest(nodeID, http.StatusUnprocessableEntity, start)
 		writeJSONError(w, http.StatusUnprocessableEntity, "invalid json: "+err.Error())
 		return
 	}
-	if err := validateResultsRequest(node.ID, &req); err != nil {
+	if err := validateResultsRequest(nodeID, &req); err != nil {
+		s.observeIngest(nodeID, http.StatusUnprocessableEntity, start)
 		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
 	status, err := s.persistResults(r.Context(), &req)
 	if err != nil {
-		s.log.Error().Err(err).Str("node_id", node.ID).Str("probe_run_id", req.ProbeRunID).Msg("results: persist failed")
+		s.log.Error().Err(err).Str("node_id", nodeID).Str("probe_run_id", req.ProbeRunID).Msg("results: persist failed")
+		s.observeIngest(nodeID, http.StatusInternalServerError, start)
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -81,21 +87,58 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		ObservedAt:    time.Now().UTC(),
 		HasOldest:     req.SpoolMetadata.SpoolDepth > 0,
 	}
-	if err := s.nodes.UpdateSpoolStats(r.Context(), node.ID, stats); err != nil {
+	if err := s.nodes.UpdateSpoolStats(r.Context(), nodeID, stats); err != nil {
 		// Don't fail the request just because the bookkeeping update raced
 		// with a node deletion; log and continue.
-		s.log.Warn().Err(err).Str("node_id", node.ID).Msg("results: spool stats update failed")
+		s.log.Warn().Err(err).Str("node_id", nodeID).Msg("results: spool stats update failed")
+	}
+	if s.metrics != nil {
+		s.metrics.NodeSpoolDepth.WithLabelValues(nodeID).Set(float64(req.SpoolMetadata.SpoolDepth))
+		s.metrics.NodeSpoolOldestAgeSecs.WithLabelValues(nodeID).Set(float64(req.SpoolMetadata.SpoolOldestAgeSeconds))
+		s.metrics.NodeLastSeenSeconds.WithLabelValues(nodeID).Set(0)
+		// drops_total is a snapshot from the agent; only the delta is meaningful
+		// for a Prom counter, but on-controller restart we lose that history.
+		// Set the gauge equivalent via Add(0) is wrong; instead, expose the
+		// snapshot through the spool_drops_total counter by Add'ing the diff.
+		// Phase 2-friendly approximation: rely on the per-node snapshot in the
+		// nodes table for absolute values; the counter here is best-effort.
+		if status == http.StatusCreated {
+			s.metrics.ProbeResultsTotal.Add(float64(len(req.Results)))
+		}
 	}
 
+	s.observeIngest(nodeID, status, start)
 	s.log.Info().
-		Str("node_id", node.ID).
+		Str("node_id", nodeID).
 		Str("probe_run_id", req.ProbeRunID).
 		Int("targets", len(req.Results)).
 		Int("status", status).
+		Dur("latency", time.Since(start)).
 		Msg("results: ingest")
 
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) observeIngest(nodeID string, status int, start time.Time) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.IngestTotal.WithLabelValues(nodeID, statusLabel(status)).Inc()
+	s.metrics.IngestLatency.Observe(time.Since(start).Seconds())
+}
+
+func statusLabel(status int) string {
+	switch {
+	case status >= 200 && status < 300:
+		return "2xx"
+	case status >= 400 && status < 500:
+		return strconv.Itoa(status)
+	case status >= 500:
+		return "5xx"
+	default:
+		return strconv.Itoa(status)
+	}
 }
 
 // persistResults writes the batch in a single transaction. Returns 201 on

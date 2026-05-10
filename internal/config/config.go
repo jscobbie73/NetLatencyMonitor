@@ -218,20 +218,37 @@ func parseTargets(raw string) ([]Target, error) {
 	return out, nil
 }
 
-// ControllerConfig holds the controller HTTP settings.
+// ControllerConfig holds the controller HTTP + readiness settings.
 type ControllerConfig struct {
 	DBPath  string
 	Listen  string // host:port
 	BaseURL string // optional, used by future ticket flow / UI links
+
+	// Readiness gates per spec §3.2.
+	MaxClockDriftMS      float64
+	MaxLitestreamLagSecs int
+	WSTicketRateLimit    int
+	MetricsToken         string
+	ChronycBinary        string
 }
 
 // LoadController reads controller env vars. Defaults are dev-friendly; in
 // production these come from /etc/nlm/controller.env.
+//
+// Readiness env vars per spec §3.2 / §3.3:
+//
+//	NLM_READY_MAX_CLOCK_DRIFT_MS    chrony drift gate (default 100)
+//	NLM_LITESTREAM_MAX_LAG_SECONDS  Litestream lag gate (default 300)
+//	NLM_WS_TICKET_RATE_LIMIT        per-IP ticket-failure cap (default 10)
+//	NLM_METRICS_TOKEN               optional bearer for /metrics
+//	NLM_CHRONYC_BINARY              chronyc executable path (default "chronyc")
 func LoadController() (ControllerConfig, error) {
 	c := ControllerConfig{
-		DBPath:  getString("NLM_CONTROLLER_DB_PATH", "/var/lib/nlm/nlm.db"),
-		Listen:  getString("NLM_CONTROLLER_LISTEN", ":8080"),
-		BaseURL: getString("NLM_CONTROLLER_BASE_URL", ""),
+		DBPath:        getString("NLM_CONTROLLER_DB_PATH", "/var/lib/nlm/nlm.db"),
+		Listen:        getString("NLM_CONTROLLER_LISTEN", ":8080"),
+		BaseURL:       getString("NLM_CONTROLLER_BASE_URL", ""),
+		MetricsToken:  getString("NLM_METRICS_TOKEN", ""),
+		ChronycBinary: getString("NLM_CHRONYC_BINARY", "chronyc"),
 	}
 	if c.DBPath == "" {
 		return c, fmt.Errorf("NLM_CONTROLLER_DB_PATH must not be empty")
@@ -239,7 +256,40 @@ func LoadController() (ControllerConfig, error) {
 	if c.Listen == "" {
 		return c, fmt.Errorf("NLM_CONTROLLER_LISTEN must not be empty")
 	}
+
+	driftMS, err := getInt("NLM_READY_MAX_CLOCK_DRIFT_MS", 100)
+	if err != nil {
+		return c, err
+	}
+	if driftMS < 0 {
+		return c, fmt.Errorf("NLM_READY_MAX_CLOCK_DRIFT_MS must be >= 0")
+	}
+	c.MaxClockDriftMS = float64(driftMS)
+
+	lagSecs, err := getInt("NLM_LITESTREAM_MAX_LAG_SECONDS", 300)
+	if err != nil {
+		return c, err
+	}
+	if lagSecs <= 0 {
+		return c, fmt.Errorf("NLM_LITESTREAM_MAX_LAG_SECONDS must be > 0")
+	}
+	c.MaxLitestreamLagSecs = lagSecs
+
+	rl, err := getInt("NLM_WS_TICKET_RATE_LIMIT", 10)
+	if err != nil {
+		return c, err
+	}
+	if rl <= 0 {
+		return c, fmt.Errorf("NLM_WS_TICKET_RATE_LIMIT must be > 0")
+	}
+	c.WSTicketRateLimit = rl
+
 	return c, nil
+}
+
+// MaxLitestreamLag returns the gate as a duration.
+func (c ControllerConfig) MaxLitestreamLag() time.Duration {
+	return time.Duration(c.MaxLitestreamLagSecs) * time.Second
 }
 
 func getString(key, def string) string {
