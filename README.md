@@ -125,7 +125,38 @@ the `<script>` tag in `internal/ui/layout.templ` and running `make templ`.
 
 ## Production deployment (Phase 6)
 
-### Provision infrastructure
+### AWS deployment (recommended)
+
+See **[DEPLOY.md](DEPLOY.md)** for the full step-by-step walkthrough.
+
+`deploy/aws/` contains Terraform for 7 t3.micro instances across 6 regions:
+- Controller (us-east-1) — `nlm-controller` + Caddy + Litestream
+- Hubs (us-east-1, us-west-1, eu-central-1) — probed by all spokes
+- Spokes (ap-southeast-1, ap-northeast-1, sa-east-1) — outbound probers only
+
+Quick start:
+
+```bash
+cd deploy/aws
+# 1. Fill in your values
+cat > terraform.tfvars <<EOF
+ssh_public_key_path  = "~/.ssh/id_ed25519.pub"
+admin_token          = "<strong-random-token>"
+litestream_s3_bucket = "nlm-backup-<unique-suffix>"
+controller_domain    = "nlm.example.com"
+acme_email           = "you@example.com"
+EOF
+
+# 2. Provision
+terraform init && terraform apply
+
+# 3. Point DNS A record for controller_domain → controller_ip output, then:
+export NLM_ADMIN_TOKEN="<same-token>"
+cd ../..
+scripts/deploy.sh     # builds, uploads, registers nodes, starts services
+```
+
+### Manual / Hetzner deployment
 
 ```
 cd deploy/terraform
@@ -135,8 +166,6 @@ terraform init && terraform apply
 
 Terraform provisions a controller node + N agent nodes on Hetzner Cloud and
 outputs their IP addresses.
-
-### Install on each node
 
 ```
 # Build locally, then scp binaries, or use CI artefacts.
@@ -165,10 +194,13 @@ cmd/
 ├── nlm-agent/        # spoke / hub / listener modes
 └── nlm-controller/   # HTTP API + DB + metrics
 deploy/
+├── aws/              # AWS Terraform (7 t3.micro across 6 regions) + user_data.tpl
 ├── caddy/            # Caddyfile (TLS reverse proxy)
 ├── litestream/       # litestream.yml (S3 replication)
 ├── systemd/          # *.service + *.timer units
 └── terraform/        # Hetzner Cloud infra (main.tf, variables.tf, outputs.tf)
+scripts/
+└── deploy.sh         # build + push + register nodes for AWS deployment
 internal/
 ├── agent/            # probe loop, HTTP sender, target cache, hub runner
 ├── chrony/           # `chronyc tracking` parser
