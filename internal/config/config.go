@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -84,6 +85,137 @@ func (c SpoolConfig) BackoffBase() time.Duration {
 // BackoffMax returns the cap on the exponential drain backoff.
 func (c SpoolConfig) BackoffMax() time.Duration {
 	return time.Duration(c.BackoffMaxSeconds) * time.Second
+}
+
+// Target identifies a single probe destination.
+type Target struct {
+	ID      string
+	Address string // host:port
+}
+
+// AgentConfig holds settings shared by spoke and hub modes.
+type AgentConfig struct {
+	NodeID        string
+	NodeSecret    string // resolved from env or NLM_NODE_SECRET_PATH
+	ControllerURL string
+	Targets       []Target
+	ProbeTimeout  time.Duration
+	HTTPTimeout   time.Duration
+	StartupJitter time.Duration
+}
+
+// LoadAgent reads agent env vars. Used by spoke and hub modes (Phases 3 / 5).
+//
+//	NLM_NODE_ID            agent identifier; must match nodes.id on controller
+//	NLM_NODE_SECRET        bearer secret; takes precedence over the file
+//	NLM_NODE_SECRET_PATH   file containing the bearer secret (default
+//	                       /var/lib/nlm/node.secret)
+//	NLM_CONTROLLER_URL     base URL, e.g. https://controller.example.com
+//	NLM_PROBE_TARGETS      comma-separated id=host:port pairs
+//	NLM_PROBE_TIMEOUT      per-target TCP-connect timeout (default 5s)
+//	NLM_HTTP_TIMEOUT       controller request timeout (default 10s)
+//	NLM_STARTUP_JITTER     max random delay before the first cycle (default 10s)
+func LoadAgent() (AgentConfig, error) {
+	c := AgentConfig{
+		NodeID:        getString("NLM_NODE_ID", ""),
+		ControllerURL: getString("NLM_CONTROLLER_URL", ""),
+	}
+	if c.NodeID == "" {
+		return c, fmt.Errorf("NLM_NODE_ID must be set")
+	}
+	if c.ControllerURL == "" {
+		return c, fmt.Errorf("NLM_CONTROLLER_URL must be set")
+	}
+
+	secret, err := loadAgentSecret()
+	if err != nil {
+		return c, err
+	}
+	c.NodeSecret = secret
+
+	rawTargets := getString("NLM_PROBE_TARGETS", "")
+	c.Targets, err = parseTargets(rawTargets)
+	if err != nil {
+		return c, err
+	}
+
+	probeSecs, err := getInt("NLM_PROBE_TIMEOUT", 5)
+	if err != nil {
+		return c, err
+	}
+	if probeSecs <= 0 {
+		return c, fmt.Errorf("NLM_PROBE_TIMEOUT must be > 0")
+	}
+	c.ProbeTimeout = time.Duration(probeSecs) * time.Second
+
+	httpSecs, err := getInt("NLM_HTTP_TIMEOUT", 10)
+	if err != nil {
+		return c, err
+	}
+	if httpSecs <= 0 {
+		return c, fmt.Errorf("NLM_HTTP_TIMEOUT must be > 0")
+	}
+	c.HTTPTimeout = time.Duration(httpSecs) * time.Second
+
+	jitterSecs, err := getInt("NLM_STARTUP_JITTER", 10)
+	if err != nil {
+		return c, err
+	}
+	if jitterSecs < 0 {
+		return c, fmt.Errorf("NLM_STARTUP_JITTER must be >= 0")
+	}
+	c.StartupJitter = time.Duration(jitterSecs) * time.Second
+
+	return c, nil
+}
+
+func loadAgentSecret() (string, error) {
+	if v := os.Getenv("NLM_NODE_SECRET"); v != "" {
+		return strings.TrimSpace(v), nil
+	}
+	path := getString("NLM_NODE_SECRET_PATH", "/var/lib/nlm/node.secret")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read NLM_NODE_SECRET_PATH (%s): %w", path, err)
+	}
+	secret := strings.TrimSpace(string(data))
+	if secret == "" {
+		return "", fmt.Errorf("NLM_NODE_SECRET_PATH (%s) is empty", path)
+	}
+	return secret, nil
+}
+
+func parseTargets(raw string) ([]Target, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]Target, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		eq := strings.IndexByte(p, '=')
+		if eq <= 0 || eq == len(p)-1 {
+			return nil, fmt.Errorf("NLM_PROBE_TARGETS[%d]: expected id=host:port, got %q", i, p)
+		}
+		t := Target{
+			ID:      strings.TrimSpace(p[:eq]),
+			Address: strings.TrimSpace(p[eq+1:]),
+		}
+		if t.ID == "" || t.Address == "" {
+			return nil, fmt.Errorf("NLM_PROBE_TARGETS[%d]: empty id or address in %q", i, p)
+		}
+		if _, dup := seen[t.ID]; dup {
+			return nil, fmt.Errorf("NLM_PROBE_TARGETS: duplicate target id %q", t.ID)
+		}
+		seen[t.ID] = struct{}{}
+		out = append(out, t)
+	}
+	return out, nil
 }
 
 // ControllerConfig holds the controller HTTP settings.
