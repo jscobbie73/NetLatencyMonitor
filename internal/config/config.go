@@ -86,6 +86,30 @@ func (c SpoolConfig) BackoffMax() time.Duration {
 	return time.Duration(c.BackoffMaxSeconds) * time.Second
 }
 
+// ControllerConfig holds the controller HTTP settings.
+type ControllerConfig struct {
+	DBPath  string
+	Listen  string // host:port
+	BaseURL string // optional, used by future ticket flow / UI links
+}
+
+// LoadController reads controller env vars. Defaults are dev-friendly; in
+// production these come from /etc/nlm/controller.env.
+func LoadController() (ControllerConfig, error) {
+	c := ControllerConfig{
+		DBPath:  getString("NLM_CONTROLLER_DB_PATH", "/var/lib/nlm/nlm.db"),
+		Listen:  getString("NLM_CONTROLLER_LISTEN", ":8080"),
+		BaseURL: getString("NLM_CONTROLLER_BASE_URL", ""),
+	}
+	if c.DBPath == "" {
+		return c, fmt.Errorf("NLM_CONTROLLER_DB_PATH must not be empty")
+	}
+	if c.Listen == "" {
+		return c, fmt.Errorf("NLM_CONTROLLER_LISTEN must not be empty")
+	}
+	return c, nil
+}
+
 func getString(key, def string) string {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		return v
