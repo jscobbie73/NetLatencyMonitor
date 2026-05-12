@@ -116,7 +116,9 @@ func (s *NodeStore) Delete(ctx context.Context, id string) error {
 		return sql.ErrNoRows
 	}
 	if prior.Role == RoleHub && !prior.Disabled {
-		_ = bumpTargetsVersion(ctx, s.db)
+		if err := bumpTargetsVersion(ctx, s.db); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -224,7 +226,9 @@ func (s *NodeStore) Upsert(ctx context.Context, n Node) error {
 		return fmt.Errorf("controller: upsert node: %w", err)
 	}
 	if hubSetChanged(prior, n, priorMissing) {
-		_ = bumpTargetsVersion(ctx, s.db)
+		if err := bumpTargetsVersion(ctx, s.db); err != nil {
+			return err
+		}
 	}
 	return nil
 }

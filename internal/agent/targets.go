@@ -37,19 +37,11 @@ type TargetCache struct {
 // backstop (NLM_HUB_REFRESH_INTERVAL); pass 0 to disable.
 func NewTargetCache(controllerURL, nodeID, secret string, httpTimeout, maxAge time.Duration) *TargetCache {
 	return &TargetCache{
-		base:   strings.TrimRight(controllerURL, "/"),
-		nodeID: nodeID,
-		secret: secret,
-		httpClient: &http.Client{
-			Timeout: httpTimeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 5,
-				IdleConnTimeout:     90 * time.Second,
-				ForceAttemptHTTP2:   true,
-			},
-		},
-		maxAge: maxAge,
+		base:       strings.TrimRight(controllerURL, "/"),
+		nodeID:     nodeID,
+		secret:     secret,
+		httpClient: newHTTPClient(httpTimeout),
+		maxAge:     maxAge,
 	}
 }
 
