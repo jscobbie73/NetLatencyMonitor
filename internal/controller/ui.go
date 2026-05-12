@@ -159,8 +159,6 @@ func (s *Server) patchDisabled(w http.ResponseWriter, r *http.Request, disable b
 	s.renderHTML(w, r, nlmui.NodeRow(nodeToInfo(node)))
 }
 
-// ── UI WebSocket ──────────────────────────────────────────────────────────────
-
 func (s *Server) handleUIWS(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || !constantTimeStringEq(c.Value, s.adminToken) {
@@ -178,8 +176,6 @@ func (s *Server) handleUIWS(w http.ResponseWriter, r *http.Request) {
 	}
 	s.serveUIClient(conn)
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 func (s *Server) renderHTML(w http.ResponseWriter, r *http.Request, c templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
