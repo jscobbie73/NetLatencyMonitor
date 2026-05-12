@@ -30,7 +30,7 @@ type ResultObservation struct {
 	Error     string   `json:"error"`      // empty on success
 }
 
-// SpoolMetadata mirrors the agent's spool snapshot per spec §3.5.
+// SpoolMetadata carries the agent's spool snapshot for controller bookkeeping.
 type SpoolMetadata struct {
 	SpoolDepth            int   `json:"spool_depth"`
 	SpoolOldestAgeSeconds int   `json:"spool_oldest_age_seconds"`
@@ -38,7 +38,7 @@ type SpoolMetadata struct {
 	DrainAttempt          int   `json:"drain_attempt"`
 }
 
-// handleResults implements POST /api/v1/results per spec §3.4.
+// handleResults implements POST /api/v1/results.
 //
 // Status code contract:
 //
@@ -128,8 +128,8 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		Dur("latency", time.Since(start)).
 		Msg("results: ingest")
 
-	// Echo the current targets_version so the agent can detect target-set
-	// changes without polling /api/v1/targets every cycle (Phase 5 design).
+	// Echo the current targets_version so agents can detect target-set changes
+	// without polling /api/v1/targets every cycle.
 	version, vErr := s.nodes.TargetsVersion(r.Context())
 	if vErr != nil {
 		s.log.Warn().Err(vErr).Msg("results: read targets_version")

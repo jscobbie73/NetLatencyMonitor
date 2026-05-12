@@ -248,8 +248,7 @@ func hubSetChanged(prior, next Node, priorMissing bool) bool {
 	return false
 }
 
-// SpoolStats is the per-node spool snapshot reported on every results POST,
-// per spec §3.1 / §3.5.
+// SpoolStats is the per-node spool snapshot reported on every results POST.
 type SpoolStats struct {
 	Depth         int
 	OldestAgeSecs int
