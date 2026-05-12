@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/jscobbie73/netlatencymonitor/internal/config"
-	"github.com/jscobbie73/netlatencymonitor/internal/controller"
+	"github.com/jscobbie73/netlatencymonitor/internal/schema"
 )
 
 // Probe runs one TCP-connect probe against addr and returns the round-trip
@@ -39,15 +39,15 @@ func Probe(ctx context.Context, addr string, timeout time.Duration) (time.Durati
 //
 // Concurrent dials are bounded by len(targets); for the modest target counts
 // in NLM (per-spoke target list is small) we don't need a worker pool.
-func RunProbes(ctx context.Context, targets []config.Target, timeout time.Duration) []controller.ResultObservation {
-	out := make([]controller.ResultObservation, len(targets))
+func RunProbes(ctx context.Context, targets []config.Target, timeout time.Duration) []schema.ResultObservation {
+	out := make([]schema.ResultObservation, len(targets))
 	var wg sync.WaitGroup
 	wg.Add(len(targets))
 	for i, t := range targets {
 		go func(i int, t config.Target) {
 			defer wg.Done()
 			rtt, err := Probe(ctx, t.Address, timeout)
-			obs := controller.ResultObservation{TargetID: t.ID}
+			obs := schema.ResultObservation{TargetID: t.ID}
 			if err != nil {
 				obs.Error = err.Error()
 			} else {

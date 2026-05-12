@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/jscobbie73/netlatencymonitor/internal/config"
-	"github.com/jscobbie73/netlatencymonitor/internal/controller"
+	"github.com/jscobbie73/netlatencymonitor/internal/schema"
 	"github.com/jscobbie73/netlatencymonitor/internal/spool"
 )
 
@@ -101,12 +101,12 @@ func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 		s.log.Warn().Err(err).Msg("spoke: read last drain snapshot failed; reporting zero spool metadata")
 	}
 
-	req := controller.ResultsRequest{
+	req := schema.ResultsRequest{
 		SourceID:   s.cfg.NodeID,
 		ProbeRunID: runID,
 		ObservedAt: observedAt,
 		Results:    results,
-		SpoolMetadata: controller.SpoolMetadata{
+		SpoolMetadata: schema.SpoolMetadata{
 			SpoolDepth:            prevSnap.Depth,
 			SpoolOldestAgeSeconds: prevSnap.OldestAgeSecs,
 			SpoolDropsTotal:       prevSnap.DropsTotal,

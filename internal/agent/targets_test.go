@@ -14,18 +14,18 @@ import (
 
 	"github.com/jscobbie73/netlatencymonitor/internal/agent"
 	"github.com/jscobbie73/netlatencymonitor/internal/config"
-	"github.com/jscobbie73/netlatencymonitor/internal/controller"
+	"github.com/jscobbie73/netlatencymonitor/internal/schema"
 	"github.com/jscobbie73/netlatencymonitor/internal/spool"
 )
 
 // fakeTargetsServer returns a tiny HTTP server that echoes the configured
 // target list and version. version is read atomically so tests can flip it.
-func fakeTargetsServer(t *testing.T, targets []controller.TargetEntry, version *int64) *httptest.Server {
+func fakeTargetsServer(t *testing.T, targets []schema.TargetEntry, version *int64) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/targets", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(controller.TargetsResponse{
+		_ = json.NewEncoder(w).Encode(schema.TargetsResponse{
 			Targets:        targets,
 			TargetsVersion: atomic.LoadInt64(version),
 		})
@@ -38,7 +38,7 @@ func fakeTargetsServer(t *testing.T, targets []controller.TargetEntry, version *
 func TestTargetCacheRefreshesOnVersionChange(t *testing.T) {
 	ctx := context.Background()
 	v := int64(1)
-	ts := fakeTargetsServer(t, []controller.TargetEntry{{ID: "hub-A", Address: "10.0.0.1:1"}}, &v)
+	ts := fakeTargetsServer(t, []schema.TargetEntry{{ID: "hub-A", Address: "10.0.0.1:1"}}, &v)
 
 	cache := agent.NewTargetCache(ts.URL, "spoke-1", "secret", time.Second, time.Hour)
 
@@ -71,7 +71,7 @@ func TestTargetCacheRefreshesOnVersionChange(t *testing.T) {
 func TestTargetCacheStaleOnFetchError(t *testing.T) {
 	ctx := context.Background()
 	v := int64(1)
-	ts := fakeTargetsServer(t, []controller.TargetEntry{{ID: "hub-A", Address: "10.0.0.1:1"}}, &v)
+	ts := fakeTargetsServer(t, []schema.TargetEntry{{ID: "hub-A", Address: "10.0.0.1:1"}}, &v)
 
 	cache := agent.NewTargetCache(ts.URL, "spoke-1", "secret", time.Second, time.Hour)
 	if _, _, err := cache.Targets(ctx); err != nil {
