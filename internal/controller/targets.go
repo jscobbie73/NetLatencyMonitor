@@ -4,20 +4,6 @@ import (
 	"net/http"
 )
 
-// TargetsResponse is the body of GET /api/v1/targets: active hubs minus
-// self, plus the monotonic targets_version. Agents cache the version and
-// refetch only when POST /api/v1/results echoes a new one.
-type TargetsResponse struct {
-	Targets        []TargetEntry `json:"targets"`
-	TargetsVersion int64         `json:"targets_version"`
-}
-
-// TargetEntry is one (id, address) pair to probe.
-type TargetEntry struct {
-	ID      string `json:"id"`
-	Address string `json:"address"`
-}
-
 // handleTargets implements GET /api/v1/targets. The caller must already be
 // authenticated by the bearer middleware. Self-exclusion uses the
 // authenticated node id, not a query param, so a spoke can't enumerate

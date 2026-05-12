@@ -12,39 +12,6 @@ import (
 	"time"
 )
 
-// ResultsRequest is the agent → controller payload for /api/v1/results.
-// One request = one probe cycle from one source = one or more (target, latency)
-// observations sharing a probe_run_id.
-type ResultsRequest struct {
-	SourceID      string              `json:"source_id"`
-	ProbeRunID    string              `json:"probe_run_id"`
-	ObservedAt    time.Time           `json:"observed_at"`
-	Results       []ResultObservation `json:"results"`
-	SpoolMetadata SpoolMetadata       `json:"spool_metadata"`
-}
-
-// ResultObservation is one (target, latency) measurement.
-type ResultObservation struct {
-	TargetID  string   `json:"target_id"`
-	LatencyMs *float64 `json:"latency_ms"` // nil on failure
-	Error     string   `json:"error"`      // empty on success
-}
-
-// SpoolMetadata carries the agent's spool snapshot for controller bookkeeping.
-type SpoolMetadata struct {
-	SpoolDepth            int   `json:"spool_depth"`
-	SpoolOldestAgeSeconds int   `json:"spool_oldest_age_seconds"`
-	SpoolDropsTotal       int64 `json:"spool_drops_total"`
-	DrainAttempt          int   `json:"drain_attempt"`
-}
-
-// resultsResponse is the JSON shape returned by POST /api/v1/results.
-// TargetsVersion is omitted when the targets_version query fails.
-type resultsResponse struct {
-	Status         string `json:"status"`
-	TargetsVersion *int64 `json:"targets_version,omitempty"`
-}
-
 // handleResults implements POST /api/v1/results.
 //
 // Status code contract:

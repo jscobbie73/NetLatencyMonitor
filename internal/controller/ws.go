@@ -18,18 +18,6 @@ const (
 	wsPingPeriod = (wsPongWait * 9) / 10
 )
 
-// wsTicketResponse is the JSON shape returned by POST /api/v1/ws-ticket.
-type wsTicketResponse struct {
-	Ticket    string `json:"ticket"`
-	ExpiresAt string `json:"expires_at"`
-}
-
-// wsHelloMessage is sent to the agent immediately after a successful WS upgrade.
-type wsHelloMessage struct {
-	Type   string `json:"type"`
-	NodeID string `json:"node_id"`
-}
-
 // handleWSTicket implements POST /api/v1/ws-ticket. Auth is handled by the
 // surrounding bearerAuth middleware. The ticket is bound to the calling node
 // so the subsequent WS upgrade carries the same identity.

@@ -189,34 +189,6 @@ func (s *Server) refreshMetrics() {
 	}
 }
 
-// readyzResponse is the JSON shape returned by GET /readyz.
-type readyzResponse struct {
-	Status string       `json:"status"`
-	Checks readyzChecks `json:"checks"`
-}
-
-// readyzChecks holds per-subsystem readiness details.
-type readyzChecks struct {
-	Chrony     *chronyCheck     `json:"chrony,omitempty"`
-	Litestream *litestreamCheck `json:"litestream,omitempty"`
-}
-
-// chronyCheck is the chrony sub-object in a /readyz response.
-type chronyCheck struct {
-	OK      bool    `json:"ok"`
-	DriftMS float64 `json:"drift_ms,omitempty"`
-	MaxMS   float64 `json:"max_ms,omitempty"`
-	Error   string  `json:"error,omitempty"`
-}
-
-// litestreamCheck is the litestream sub-object in a /readyz response.
-type litestreamCheck struct {
-	OK            bool    `json:"ok"`
-	ServiceActive bool    `json:"service_active,omitempty"`
-	LagSeconds    float64 `json:"lag_seconds"`
-	MaxLag        float64 `json:"max_lag,omitempty"`
-}
-
 // handleHealthz returns 200 unconditionally; chrony / Litestream gates apply
 // only to /readyz.
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {

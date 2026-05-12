@@ -36,47 +36,6 @@ func constantTimeStringEq(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-// AdminNode is the JSON shape returned by admin endpoints.
-type AdminNode struct {
-	ID       string `json:"id"`
-	Role     string `json:"role"`
-	Address  string `json:"address,omitempty"`
-	Disabled bool   `json:"disabled"`
-}
-
-// adminListNodesResponse is the JSON shape returned by GET /api/v1/admin/nodes.
-type adminListNodesResponse struct {
-	Nodes []AdminNode `json:"nodes"`
-}
-
-// AdminCreateRequest is the body of POST /api/v1/admin/nodes.
-type AdminCreateRequest struct {
-	ID       string `json:"id"`
-	Role     string `json:"role"`
-	Address  string `json:"address,omitempty"`
-	Disabled bool   `json:"disabled,omitempty"`
-	// Secret may be supplied by the operator. If empty, the controller mints
-	// a random 256-bit secret and returns it ONCE in the create response.
-	Secret string `json:"secret,omitempty"`
-}
-
-// AdminCreateResponse is what POST /api/v1/admin/nodes returns. Secret is
-// only present on create; it is never echoed by other endpoints.
-type AdminCreateResponse struct {
-	Node   AdminNode `json:"node"`
-	Secret string    `json:"secret"`
-}
-
-// AdminPatchRequest is the body of PATCH /api/v1/admin/nodes/{id}. All
-// fields are optional; the operator can rotate the secret by passing a new
-// "secret" string (or "" to keep the existing one).
-type AdminPatchRequest struct {
-	Role     *string `json:"role,omitempty"`
-	Address  *string `json:"address,omitempty"`
-	Disabled *bool   `json:"disabled,omitempty"`
-	Secret   *string `json:"secret,omitempty"`
-}
-
 func (s *Server) handleAdminListNodes(w http.ResponseWriter, r *http.Request) {
 	nodes, err := s.nodes.List(r.Context())
 	if err != nil {

@@ -187,15 +187,6 @@ func (s *Server) renderHTML(w http.ResponseWriter, r *http.Request, c templ.Comp
 	}
 }
 
-// ProbeEvent is the JSON message broadcast to UI WebSocket clients on 201.
-type ProbeEvent struct {
-	Type      string  `json:"type"`
-	SourceID  string  `json:"source_id"`
-	TargetID  string  `json:"target_id"`
-	LatencyMS float64 `json:"latency_ms,omitempty"`
-	Error     string  `json:"error,omitempty"`
-}
-
 // broadcastResults fans probe observations out to all connected UI clients.
 func (s *Server) broadcastResults(sourceID string, results []ResultObservation) {
 	if s.wsHub == nil {

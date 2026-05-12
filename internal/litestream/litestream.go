@@ -1,11 +1,9 @@
 // Package litestream tracks Litestream replication health for use by the
-// controller's /readyz check and Prometheus metrics (spec §3.2 / §11).
+// controller's /readyz check and Prometheus metrics.
 //
 // The data model is intentionally narrow: an external producer (typically a
-// goroutine tailing the Litestream service's stderr or journald output)
-// reports successful syncs and errors via Tracker; consumers query Status.
-// Wiring the producer to a real log source lives outside this package
-// (Phase 6) so we can exercise the readiness logic in isolation.
+// goroutine tailing the Litestream service's journald output) reports
+// successful syncs and errors via Tracker; consumers query Status.
 package litestream
 
 import (

@@ -5,18 +5,16 @@ import (
 	"time"
 )
 
-// DefaultBlockDuration is how long an over-limit IP is shut out. Per spec §3.3.
+// DefaultBlockDuration is how long an over-limit IP is shut out.
 const DefaultBlockDuration = 60 * time.Second
 
-// DefaultWindow is the rolling window for counting failures (spec §3.3).
+// DefaultWindow is the rolling window for counting failures.
 const DefaultWindow = 60 * time.Second
 
 // RateLimiter throttles failed ticket validations per source IP.
 //
-// Semantics per spec §3.3:
-//   - Track failed validations per source IP within a rolling 60s window.
-//   - Once `limit` failures accumulate, return Blocked() == true for the
-//     next 60s.
+//   - Failures within a rolling window accumulate per IP.
+//   - Once the limit is reached, Blocked() returns true for BlockDuration.
 //   - Successful validations don't count against the limit.
 //   - State is in-memory only; resets on controller restart.
 type RateLimiter struct {
