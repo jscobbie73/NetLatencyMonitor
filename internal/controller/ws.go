@@ -18,6 +18,19 @@ const (
 	wsPingPeriod = (wsPongWait * 9) / 10
 )
 
+// wsTicketResponse is the JSON shape returned by POST /api/v1/ws-ticket.
+type wsTicketResponse struct {
+	Ticket    string `json:"ticket"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+// wsHelloMessage is sent to the agent immediately after a successful WS upgrade.
+type wsHelloMessage struct {
+	Type   string `json:"type"`
+	NodeID string `json:"node_id"`
+	Phase  string `json:"phase"`
+}
+
 // handleWSTicket implements POST /api/v1/ws-ticket per spec §3.3.
 //
 // Auth: bearer (handled by the surrounding bearerAuth middleware). The
@@ -40,9 +53,9 @@ func (s *Server) handleWSTicket(w http.ResponseWriter, r *http.Request) {
 	if s.metrics != nil {
 		s.metrics.WSTicketsIssued.Inc()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ticket":     tk.Value,
-		"expires_at": tk.ExpiresAt.UTC().Format(time.RFC3339),
+	writeJSON(w, http.StatusOK, wsTicketResponse{
+		Ticket:    tk.Value,
+		ExpiresAt: tk.ExpiresAt.UTC().Format(time.RFC3339),
 	})
 }
 
@@ -116,9 +129,9 @@ func (s *Server) serveWS(conn *websocket.Conn, nodeID string) {
 	})
 
 	// Send a hello so a client knows it's authenticated.
-	hello, _ := json.Marshal(map[string]any{
-		"type":    "hello",
-		"node_id": nodeID,
+	hello, _ := json.Marshal(wsHelloMessage{
+		Type:   "hello",
+		NodeID: nodeID,
 	})
 	_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 	if err := conn.WriteMessage(websocket.TextMessage, hello); err != nil {

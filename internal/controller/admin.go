@@ -44,6 +44,11 @@ type AdminNode struct {
 	Disabled bool   `json:"disabled"`
 }
 
+// adminListNodesResponse is the JSON shape returned by GET /api/v1/admin/nodes.
+type adminListNodesResponse struct {
+	Nodes []AdminNode `json:"nodes"`
+}
+
 // AdminCreateRequest is the body of POST /api/v1/admin/nodes.
 type AdminCreateRequest struct {
 	ID       string `json:"id"`
@@ -83,7 +88,7 @@ func (s *Server) handleAdminListNodes(w http.ResponseWriter, r *http.Request) {
 	for _, n := range nodes {
 		out = append(out, AdminNode{ID: n.ID, Role: n.Role, Address: n.Address, Disabled: n.Disabled})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"nodes": out})
+	writeJSON(w, http.StatusOK, adminListNodesResponse{Nodes: out})
 }
 
 func (s *Server) handleAdminCreateNode(w http.ResponseWriter, r *http.Request) {

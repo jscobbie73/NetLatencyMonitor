@@ -38,6 +38,13 @@ type SpoolMetadata struct {
 	DrainAttempt          int   `json:"drain_attempt"`
 }
 
+// resultsResponse is the JSON shape returned by POST /api/v1/results.
+// TargetsVersion is omitted when the targets_version query fails.
+type resultsResponse struct {
+	Status         string `json:"status"`
+	TargetsVersion *int64 `json:"targets_version,omitempty"`
+}
+
 // handleResults implements POST /api/v1/results.
 //
 // Status code contract:
@@ -134,9 +141,9 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 	if vErr != nil {
 		s.log.Warn().Err(vErr).Msg("results: read targets_version")
 	}
-	resp := map[string]any{"status": "ok"}
+	resp := resultsResponse{Status: "ok"}
 	if vErr == nil {
-		resp["targets_version"] = version
+		resp.TargetsVersion = &version
 	}
 	writeJSON(w, status, resp)
 }
@@ -166,10 +173,8 @@ func statusLabel(status int) string {
 
 // persistResults writes the batch in a single transaction. Returns 201 on
 // fresh write, 409 if any row collides on (source_id, probe_run_id, target_id).
-//
-// Per spec §3.4, replay of identical content returns 409. We treat any UNIQUE
-// collision in this batch as a replay; the agent doesn't construct mixed
-// batches (one batch == one probe cycle == one HTTP POST).
+// Any UNIQUE collision is treated as a replay; one batch always corresponds
+// to one probe cycle (one HTTP POST).
 func (s *Server) persistResults(ctx context.Context, req *ResultsRequest) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
