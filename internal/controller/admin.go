@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 )
 
 // adminAuth gates routes with `Authorization: Bearer <NLM_ADMIN_TOKEN>`.
@@ -21,13 +20,11 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 			writeJSONError(w, http.StatusServiceUnavailable, "admin api disabled (NLM_ADMIN_TOKEN not set)")
 			return
 		}
-		hdr := r.Header.Get("Authorization")
-		const prefix = "Bearer "
-		if len(hdr) <= len(prefix) || !strings.EqualFold(hdr[:len(prefix)], prefix) {
+		got, err := parseBearer(r.Header.Get("Authorization"))
+		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "missing bearer")
 			return
 		}
-		got := strings.TrimSpace(hdr[len(prefix):])
 		if !constantTimeStringEq(got, s.adminToken) {
 			writeJSONError(w, http.StatusUnauthorized, "bad admin token")
 			return
