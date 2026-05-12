@@ -2,6 +2,7 @@ package controller
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -10,10 +11,8 @@ import (
 )
 
 // adminAuth gates routes with `Authorization: Bearer <NLM_ADMIN_TOKEN>`.
-//
-// Returns a no-op-deny middleware when no admin token is configured: every
-// request is rejected with 503 instead of 401 to make the misconfiguration
-// obvious. (Web UI in Phase 7 prompts the operator for the token.)
+// Returns 503 when no admin token is configured so the misconfiguration is
+// obvious rather than silently returning 401 with no hint.
 func (s *Server) adminAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.adminToken == "" {
@@ -34,14 +33,7 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 }
 
 func constantTimeStringEq(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	var v byte
-	for i := 0; i < len(a); i++ {
-		v |= a[i] ^ b[i]
-	}
-	return v == 0
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 // AdminNode is the JSON shape returned by admin endpoints.

@@ -77,9 +77,7 @@ func (h *Hub) runCycle(ctx context.Context) error {
 	return err
 }
 
-// HubDeps bundles the dependencies cmd/nlm-agent needs to construct a Hub.
-// Kept as a struct so the wiring layer can be shared with future spoke
-// daemonization.
+// HubDeps bundles the dependencies needed to construct a Hub.
 type HubDeps struct {
 	Cfg     config.AgentConfig
 	Spool   *spool.Spool

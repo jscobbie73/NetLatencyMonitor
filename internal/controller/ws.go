@@ -55,8 +55,8 @@ func (s *Server) handleWSTicket(w http.ResponseWriter, r *http.Request) {
 //   - After NLM_WS_TICKET_RATE_LIMIT failures from a single source IP,
 //     return 429 for 60s.
 //
-// The actual broadcast machinery (live UI updates) lands with the web UI
-// in Phase 7; here we ship a stub that pongs and otherwise blocks.
+// This endpoint is the agent-facing keep-alive channel. UI broadcast
+// (probe_result events to browsers) uses the separate /api/v1/ui/ws path.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 
@@ -119,7 +119,6 @@ func (s *Server) serveWS(conn *websocket.Conn, nodeID string) {
 	hello, _ := json.Marshal(map[string]any{
 		"type":    "hello",
 		"node_id": nodeID,
-		"phase":   "stub",
 	})
 	_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 	if err := conn.WriteMessage(websocket.TextMessage, hello); err != nil {
@@ -136,7 +135,6 @@ func (s *Server) serveWS(conn *websocket.Conn, nodeID string) {
 			if _, _, err := conn.NextReader(); err != nil {
 				return
 			}
-			// Phase 7: route client subscription messages here.
 		}
 	}()
 

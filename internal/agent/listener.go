@@ -10,7 +10,7 @@ import (
 
 // Listener is the probe target service. It accepts TCP connections and
 // closes them immediately — that's enough for the spoke side to time the
-// dial→established round-trip per spec §1.
+// dial→established round-trip.
 type Listener struct {
 	addr string
 	log  zerolog.Logger
