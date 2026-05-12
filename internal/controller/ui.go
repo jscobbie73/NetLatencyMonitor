@@ -36,12 +36,12 @@ func isHTTPS(r *http.Request) bool {
 
 func (s *Server) handleUILogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		renderHTML(w, r, nlmui.Login(""))
+		s.renderHTML(w, r, nlmui.Login(""))
 		return
 	}
 	token := strings.TrimSpace(r.FormValue("token"))
 	if s.adminToken == "" || !constantTimeStringEq(token, s.adminToken) {
-		renderHTML(w, r, nlmui.Login("Invalid token."))
+		s.renderHTML(w, r, nlmui.Login("Invalid token."))
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -74,7 +74,7 @@ func (s *Server) handleUIDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	renderHTML(w, r, nlmui.Dashboard(matrix))
+	s.renderHTML(w, r, nlmui.Dashboard(matrix))
 }
 
 func (s *Server) handleUINodes(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +83,7 @@ func (s *Server) handleUINodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	renderHTML(w, r, nlmui.Nodes(infos, ""))
+	s.renderHTML(w, r, nlmui.Nodes(infos, ""))
 }
 
 // ── htmx fragment handlers ────────────────────────────────────────────────────
@@ -94,11 +94,11 @@ func (s *Server) handleFragMatrix(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	renderHTML(w, r, nlmui.MatrixTable(matrix))
+	s.renderHTML(w, r, nlmui.MatrixTable(matrix))
 }
 
 func (s *Server) handleFragNewNodeForm(w http.ResponseWriter, r *http.Request) {
-	renderHTML(w, r, nlmui.CreateNodeForm())
+	s.renderHTML(w, r, nlmui.CreateNodeForm())
 }
 
 func (s *Server) handleFragCreateNode(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +131,7 @@ func (s *Server) handleFragCreateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Surface the one-time secret in the page banner above the updated table.
-	renderHTML(w, r, nlmui.Nodes(infos, secret))
+	s.renderHTML(w, r, nlmui.Nodes(infos, secret))
 }
 
 func (s *Server) handleFragDeleteNode(w http.ResponseWriter, r *http.Request) {
@@ -163,7 +163,7 @@ func (s *Server) patchDisabled(w http.ResponseWriter, r *http.Request, disable b
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	renderHTML(w, r, nlmui.NodeRow(nodeToInfo(node)))
+	s.renderHTML(w, r, nlmui.NodeRow(nodeToInfo(node)))
 }
 
 // ── UI WebSocket ──────────────────────────────────────────────────────────────
@@ -188,9 +188,14 @@ func (s *Server) handleUIWS(w http.ResponseWriter, r *http.Request) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func renderHTML(w http.ResponseWriter, r *http.Request, c templ.Component) {
+func (s *Server) renderHTML(w http.ResponseWriter, r *http.Request, c templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = c.Render(r.Context(), w)
+	if err := c.Render(r.Context(), w); err != nil && r.Context().Err() == nil {
+		// The response header is already sent; we cannot change the status code.
+		// Log so the operator can see template rendering failures.
+		// Skip logging when the context is cancelled (client disconnected).
+		s.log.Error().Err(err).Msg("ui: render template failed")
+	}
 }
 
 // ProbeEvent is the JSON message broadcast to UI WebSocket clients on 201.

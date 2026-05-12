@@ -1,11 +1,10 @@
-// nlm-agent runs in three modes per spec §3.1:
+// nlm-agent runs in three modes:
 //
 //	--mode spoke     run a probe + drain cycle (use with --once for the
-//	                 systemd-timer model in §6, or omit --once for a long-
-//	                 running daemon — Phase 5 will add the daemon loop)
+//	                 systemd-timer model, or omit --once for a long-running daemon)
 //	--mode listener  long-running TCP target service for spokes to dial
-//	--mode hub       Phase 5 — daemon that pulls its target list from the
-//	                 controller and probes on a fixed interval
+//	--mode hub       daemon that pulls its target list from the controller
+//	                 and probes on a fixed interval
 package main
 
 import (
@@ -109,8 +108,8 @@ func runHub(ctx context.Context) error {
 	return hub.Run(ctx)
 }
 
-// buildTargetSource picks between an env-supplied static list (handy for
-// tests / dev) and the live controller-fed cache.
+// buildTargetSource picks between an env-supplied static list and the live
+// controller-fed cache.
 func buildTargetSource(cfg config.AgentConfig, client *agent.Client) agent.TargetSource {
 	if len(cfg.Targets) > 0 {
 		return agent.StaticTargets(cfg.Targets)

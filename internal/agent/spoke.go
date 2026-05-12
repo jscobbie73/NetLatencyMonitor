@@ -99,7 +99,10 @@ func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 	// Use the post-drain snapshot from the *previous* cycle as SpoolMetadata.
 	// This satisfies spec §3.5: the reported depth/drops reflect actual state
 	// after drain, not a pre-drain estimate. First cycle reports zero values.
-	prevSnap, _ := s.spool.LastDrainSnapshot(ctx)
+	prevSnap, err := s.spool.LastDrainSnapshot(ctx)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("spoke: read last drain snapshot failed; reporting zero spool metadata")
+	}
 
 	req := controller.ResultsRequest{
 		SourceID:   s.cfg.NodeID,
@@ -140,9 +143,19 @@ func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 	}
 
 	// Persist post-drain snapshot for the next cycle's SpoolMetadata report.
-	postDepth, _ := s.spool.Depth(ctx)
-	postOldest, _ := s.spool.OldestAge(ctx)
-	postDrops, _ := s.spool.DropsTotal(ctx)
+	// These reads are best-effort: errors are logged but do not fail the cycle.
+	postDepth, err := s.spool.Depth(ctx)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("spoke: read spool depth failed; reporting zero")
+	}
+	postOldest, err := s.spool.OldestAge(ctx)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("spoke: read spool oldest age failed; reporting zero")
+	}
+	postDrops, err := s.spool.DropsTotal(ctx)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("spoke: read spool drops total failed; reporting zero")
+	}
 	if saveErr := s.spool.SaveDrainSnapshot(ctx, postDepth, int(postOldest.Seconds()), postDrops); saveErr != nil {
 		s.log.Warn().Err(saveErr).Msg("spoke: save drain snapshot failed")
 	}

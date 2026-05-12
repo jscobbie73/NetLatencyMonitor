@@ -33,11 +33,6 @@ type CommandQuerier struct {
 	Timeout time.Duration
 }
 
-// NewCommandQuerier returns a querier with sensible defaults.
-func NewCommandQuerier() *CommandQuerier {
-	return &CommandQuerier{Binary: "chronyc", Timeout: 2 * time.Second}
-}
-
 // Drift implements Querier.
 func (c *CommandQuerier) Drift(ctx context.Context) (DriftMS, error) {
 	bin := c.Binary

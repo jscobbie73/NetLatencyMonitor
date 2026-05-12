@@ -242,9 +242,8 @@ func parseTargets(raw string) ([]Target, error) {
 
 // ControllerConfig holds the controller HTTP + readiness settings.
 type ControllerConfig struct {
-	DBPath  string
-	Listen  string // host:port
-	BaseURL string // optional, used by future ticket flow / UI links
+	DBPath string
+	Listen string // host:port
 
 	// Readiness gates per spec §3.2.
 	MaxClockDriftMS      float64
@@ -270,7 +269,6 @@ func LoadController() (ControllerConfig, error) {
 	c := ControllerConfig{
 		DBPath:        getString("NLM_CONTROLLER_DB_PATH", "/var/lib/nlm/nlm.db"),
 		Listen:        getString("NLM_CONTROLLER_LISTEN", ":8080"),
-		BaseURL:       getString("NLM_CONTROLLER_BASE_URL", ""),
 		MetricsToken:  getString("NLM_METRICS_TOKEN", ""),
 		ChronycBinary: getString("NLM_CHRONYC_BINARY", "chronyc"),
 		AdminToken:    getString("NLM_ADMIN_TOKEN", ""),

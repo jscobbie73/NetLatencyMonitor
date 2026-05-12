@@ -166,7 +166,12 @@ func (s *Server) Handler() http.Handler {
 
 	// Static assets — strip "static/" prefix from the embedded FS so that
 	// /static/style.css → fs:static/style.css resolves correctly.
-	staticFS, _ := fs.Sub(nlmui.StaticFS, "static")
+	// fs.Sub over an embed.FS can only fail if "static" is not present in
+	// the embedded tree, which is a programmer error caught at build time.
+	staticFS, err := fs.Sub(nlmui.StaticFS, "static")
+	if err != nil {
+		panic("controller: embedded static FS missing 'static' directory: " + err.Error())
+	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	return mux

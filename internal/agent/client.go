@@ -15,8 +15,8 @@ import (
 )
 
 // VersionNotifier is anything that wants to be told the controller's
-// current targets_version after a successful (or replayed) ingest. The
-// TargetCache implements it; see Phase 5 design notes.
+// current targets_version after a successful (or replayed) ingest.
+// TargetCache implements this interface.
 type VersionNotifier interface {
 	NoticeVersion(v int64)
 }
