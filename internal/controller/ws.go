@@ -28,16 +28,11 @@ type wsTicketResponse struct {
 type wsHelloMessage struct {
 	Type   string `json:"type"`
 	NodeID string `json:"node_id"`
-	Phase  string `json:"phase"`
 }
 
-// handleWSTicket implements POST /api/v1/ws-ticket per spec §3.3.
-//
-// Auth: bearer (handled by the surrounding bearerAuth middleware). The
-// ticket is bound to the calling node so the WS upgrade can carry the same
-// identity through.
-//
-// Response: {"ticket":"...", "expires_at":"RFC3339"}.
+// handleWSTicket implements POST /api/v1/ws-ticket. Auth is handled by the
+// surrounding bearerAuth middleware. The ticket is bound to the calling node
+// so the subsequent WS upgrade carries the same identity.
 func (s *Server) handleWSTicket(w http.ResponseWriter, r *http.Request) {
 	node, ok := nodeFromCtx(r.Context())
 	if !ok {
@@ -59,17 +54,12 @@ func (s *Server) handleWSTicket(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleWS implements GET /api/v1/ws.
+// handleWS implements GET /api/v1/ws. The URL must carry ?ticket=<value>.
+// Tickets are single-use: first use validates and deletes; second use returns
+// 401. Expired tickets (>60s) also return 401. After NLM_WS_TICKET_RATE_LIMIT
+// failures from one source IP, the IP is blocked for 60s (429).
 //
-// The URL must carry ?ticket=<value>. Per spec §3.3:
-//   - First use of a ticket: validates, deletes, allows upgrade.
-//   - Second use: 401 (ticket no longer exists).
-//   - Expired (>60s): 401.
-//   - After NLM_WS_TICKET_RATE_LIMIT failures from a single source IP,
-//     return 429 for 60s.
-//
-// This endpoint is the agent-facing keep-alive channel. UI broadcast
-// (probe_result events to browsers) uses the separate /api/v1/ui/ws path.
+// This is the agent-facing keep-alive channel; UI broadcast uses /api/v1/ui/ws.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 
@@ -164,7 +154,7 @@ func (s *Server) serveWS(conn *websocket.Conn, nodeID string) {
 	}
 }
 
-// checkWSOrigin enforces the WebSocket upgrade origin policy per spec §3.3:
+// checkWSOrigin enforces the WebSocket upgrade origin policy:
 //   - No Origin header (CLI / non-browser clients): always allowed.
 //   - Origin host matches the request Host: allowed (same-origin browser).
 //   - Origin is in s.wsAllowedOrigins: allowed (configured cross-origin).

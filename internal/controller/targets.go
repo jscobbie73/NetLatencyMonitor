@@ -4,9 +4,9 @@ import (
 	"net/http"
 )
 
-// TargetsResponse is the body of GET /api/v1/targets per Phase 5 design:
-// active hubs minus self, plus the monotonic targets_version. Agents cache
-// the version and refetch only when POST /api/v1/results echoes a new one.
+// TargetsResponse is the body of GET /api/v1/targets: active hubs minus
+// self, plus the monotonic targets_version. Agents cache the version and
+// refetch only when POST /api/v1/results echoes a new one.
 type TargetsResponse struct {
 	Targets        []TargetEntry `json:"targets"`
 	TargetsVersion int64         `json:"targets_version"`

@@ -223,17 +223,17 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleReadyz enforces the readiness gates from spec §3.2:
+// handleReadyz enforces readiness gates:
 //
 //   - chrony query MUST succeed and drift MUST be within MaxClockDriftMS.
-//     If Chrony is nil, /readyz fails closed.
+//     If Chrony is nil, /readyz fails closed (unknown clock is worse than
+//     a known-skewed one).
 //   - If Litestream is wired, the service must be active and lag within
 //     MaxLitestreamLag. Litestream nil = "not configured" = pass.
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	resp := readyzResponse{Status: "ok"}
 	failed := false
 
-	// Chrony: fail-closed if unconfigured per spec.
 	if s.chrony == nil {
 		resp.Checks.Chrony = &chronyCheck{OK: false, Error: "not configured (fail-closed)"}
 		failed = true
@@ -290,8 +290,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, resp)
 }
 
-// dbSize returns the on-disk DB size, summing main + WAL + SHM. Used by the
-// /metrics scrape; called rarely so the os.Stat cost is fine.
+// dbSize returns the on-disk DB size, summing main + WAL + SHM.
 func (s *Server) dbSize() int64 {
 	if s.dbPath == "" {
 		return 0

@@ -15,8 +15,7 @@ import (
 const sessionCookie = "nlm_session"
 
 // requireSession redirects unauthenticated requests to /ui/login. The session
-// cookie stores the admin token directly (HttpOnly, SameSite=Strict). Full
-// session management is deferred to spec Phase 2.
+// cookie stores the admin token directly (HttpOnly, SameSite=Strict).
 func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(sessionCookie)
@@ -31,8 +30,6 @@ func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 func isHTTPS(r *http.Request) bool {
 	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
-
-// ── Login / logout ────────────────────────────────────────────────────────────
 
 func (s *Server) handleUILogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
@@ -65,8 +62,6 @@ func (s *Server) handleUILogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
 }
 
-// ── Full pages ────────────────────────────────────────────────────────────────
-
 func (s *Server) handleUIDashboard(w http.ResponseWriter, r *http.Request) {
 	matrix, err := s.queryMatrix(r.Context())
 	if err != nil {
@@ -85,8 +80,6 @@ func (s *Server) handleUINodes(w http.ResponseWriter, r *http.Request) {
 	}
 	s.renderHTML(w, r, nlmui.Nodes(infos, ""))
 }
-
-// ── htmx fragment handlers ────────────────────────────────────────────────────
 
 func (s *Server) handleFragMatrix(w http.ResponseWriter, r *http.Request) {
 	matrix, err := s.queryMatrix(r.Context())
