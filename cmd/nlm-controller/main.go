@@ -1,11 +1,4 @@
-// nlm-controller is the central NLM API + UI server (spec §3.2).
-//
-// Phase 4 wires:
-//   - chrony fail-closed readiness gate
-//   - Litestream tracker + Phase 6 journal watcher
-//   - WebSocket ticket store + 30s pruner
-//   - Per-IP ticket validation rate limiter
-//   - /metrics with optional NLM_METRICS_TOKEN
+// nlm-controller is the central NLM API + UI server.
 package main
 
 import (
@@ -47,7 +40,7 @@ func main() {
 	lstrack := litestream.NewTracker(cfg.MaxLitestreamLag())
 	lswatch := litestream.NewWatcher(lstrack, litestream.WatcherConfig{
 		// Scan back MaxLitestreamLag on startup so the tracker seeds LastSyncAt
-		// from the journal before the first regular poll interval elapses.
+		// before the first regular poll interval elapses.
 		InitialLookback: cfg.MaxLitestreamLag(),
 	})
 	go lswatch.Run(ctx)

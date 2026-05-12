@@ -1,6 +1,6 @@
 // Package ticket implements the short-lived single-use credentials used to
 // authenticate WebSocket upgrades, plus the per-IP rate limiter that
-// throttles abusive validation traffic. Per spec §3.3.
+// throttles abusive validation traffic.
 package ticket
 
 import (
@@ -12,10 +12,10 @@ import (
 	"time"
 )
 
-// DefaultTTL is the spec's 60-second ticket lifetime.
+// DefaultTTL is the ticket lifetime.
 const DefaultTTL = 60 * time.Second
 
-// DefaultPruneInterval is how often expired tickets are swept (spec §3.3).
+// DefaultPruneInterval is how often expired tickets are swept.
 const DefaultPruneInterval = 30 * time.Second
 
 // Errors returned by Validate.
@@ -43,8 +43,7 @@ type entry struct {
 }
 
 // Store is an in-memory single-use ticket store. Process-local; resets on
-// controller restart. HA replacement (Redis or HMAC-signed stateless
-// tickets) is a Phase 2 deferral per spec §10.
+// controller restart.
 type Store struct {
 	mu      sync.Mutex
 	tickets map[string]entry

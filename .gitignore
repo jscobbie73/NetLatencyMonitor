@@ -13,6 +13,9 @@
 *.db-wal
 *.db-shm
 
+# Claude Code agent worktrees
+.claude/
+
 # Editors / OS
 .idea/
 .vscode/

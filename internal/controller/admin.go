@@ -2,32 +2,28 @@ package controller
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 )
 
 // adminAuth gates routes with `Authorization: Bearer <NLM_ADMIN_TOKEN>`.
-//
-// Returns a no-op-deny middleware when no admin token is configured: every
-// request is rejected with 503 instead of 401 to make the misconfiguration
-// obvious. (Web UI in Phase 7 prompts the operator for the token.)
+// Returns 503 when no admin token is configured so the misconfiguration is
+// obvious rather than silently returning 401 with no hint.
 func (s *Server) adminAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.adminToken == "" {
 			writeJSONError(w, http.StatusServiceUnavailable, "admin api disabled (NLM_ADMIN_TOKEN not set)")
 			return
 		}
-		hdr := r.Header.Get("Authorization")
-		const prefix = "Bearer "
-		if len(hdr) <= len(prefix) || !strings.EqualFold(hdr[:len(prefix)], prefix) {
+		got, err := parseBearer(r.Header.Get("Authorization"))
+		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "missing bearer")
 			return
 		}
-		got := strings.TrimSpace(hdr[len(prefix):])
 		if !constantTimeStringEq(got, s.adminToken) {
 			writeJSONError(w, http.StatusUnauthorized, "bad admin token")
 			return
@@ -37,50 +33,7 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 }
 
 func constantTimeStringEq(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	var v byte
-	for i := 0; i < len(a); i++ {
-		v |= a[i] ^ b[i]
-	}
-	return v == 0
-}
-
-// AdminNode is the JSON shape returned by admin endpoints.
-type AdminNode struct {
-	ID       string `json:"id"`
-	Role     string `json:"role"`
-	Address  string `json:"address,omitempty"`
-	Disabled bool   `json:"disabled"`
-}
-
-// AdminCreateRequest is the body of POST /api/v1/admin/nodes.
-type AdminCreateRequest struct {
-	ID       string `json:"id"`
-	Role     string `json:"role"`
-	Address  string `json:"address,omitempty"`
-	Disabled bool   `json:"disabled,omitempty"`
-	// Secret may be supplied by the operator. If empty, the controller mints
-	// a random 256-bit secret and returns it ONCE in the create response.
-	Secret string `json:"secret,omitempty"`
-}
-
-// AdminCreateResponse is what POST /api/v1/admin/nodes returns. Secret is
-// only present on create; it is never echoed by other endpoints.
-type AdminCreateResponse struct {
-	Node   AdminNode `json:"node"`
-	Secret string    `json:"secret"`
-}
-
-// AdminPatchRequest is the body of PATCH /api/v1/admin/nodes/{id}. All
-// fields are optional; the operator can rotate the secret by passing a new
-// "secret" string (or "" to keep the existing one).
-type AdminPatchRequest struct {
-	Role     *string `json:"role,omitempty"`
-	Address  *string `json:"address,omitempty"`
-	Disabled *bool   `json:"disabled,omitempty"`
-	Secret   *string `json:"secret,omitempty"`
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 func (s *Server) handleAdminListNodes(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +47,7 @@ func (s *Server) handleAdminListNodes(w http.ResponseWriter, r *http.Request) {
 	for _, n := range nodes {
 		out = append(out, AdminNode{ID: n.ID, Role: n.Role, Address: n.Address, Disabled: n.Disabled})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"nodes": out})
+	writeJSON(w, http.StatusOK, adminListNodesResponse{Nodes: out})
 }
 
 func (s *Server) handleAdminCreateNode(w http.ResponseWriter, r *http.Request) {

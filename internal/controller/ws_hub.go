@@ -59,13 +59,9 @@ func (h *WSHub) Broadcast(msg []byte) {
 
 // serveUIClient runs the read+write pumps for one browser WebSocket connection.
 // The caller must have already validated the session cookie before calling.
+// Timing constants (wsWriteWait, wsPongWait, wsPingPeriod) are shared with the
+// agent WebSocket path in ws.go.
 func (s *Server) serveUIClient(conn *websocket.Conn) {
-	const (
-		writeWait  = 10 * time.Second
-		pongWait   = 60 * time.Second
-		pingPeriod = 54 * time.Second
-	)
-
 	client := newUIClient()
 	s.wsHub.register(client)
 	defer func() {
@@ -74,9 +70,9 @@ func (s *Server) serveUIClient(conn *websocket.Conn) {
 	}()
 
 	// Read pump: keep connection alive, reset read deadline on pong.
-	conn.SetReadDeadline(time.Now().Add(pongWait)) //nolint:errcheck
+	conn.SetReadDeadline(time.Now().Add(wsPongWait)) //nolint:errcheck
 	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(pongWait))
+		return conn.SetReadDeadline(time.Now().Add(wsPongWait))
 	})
 	go func() {
 		for {
@@ -88,17 +84,17 @@ func (s *Server) serveUIClient(conn *websocket.Conn) {
 	}()
 
 	// Write pump: forward broadcasts and send periodic pings.
-	ping := time.NewTicker(pingPeriod)
+	ping := time.NewTicker(wsPingPeriod)
 	defer ping.Stop()
 	for {
 		select {
 		case msg := <-client.send:
-			conn.SetWriteDeadline(time.Now().Add(writeWait)) //nolint:errcheck
+			conn.SetWriteDeadline(time.Now().Add(wsWriteWait)) //nolint:errcheck
 			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				return
 			}
 		case <-ping.C:
-			conn.SetWriteDeadline(time.Now().Add(writeWait)) //nolint:errcheck
+			conn.SetWriteDeadline(time.Now().Add(wsWriteWait)) //nolint:errcheck
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}

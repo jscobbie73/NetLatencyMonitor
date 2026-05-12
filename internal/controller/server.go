@@ -19,15 +19,14 @@ import (
 	nlmui "github.com/jscobbie73/netlatencymonitor/internal/ui"
 )
 
-// Options configures a Server. Optional fields default to safe stubs so the
-// minimal Phase 2 wiring still works (e.g. tests that don't care about
-// chrony or Litestream).
+// Options configures a Server. Optional fields default to safe stubs so
+// tests that don't care about chrony or Litestream can use New directly.
 type Options struct {
 	// DBPath is the on-disk SQLite path; used by /metrics for db_size_bytes.
 	DBPath string
 
 	// Chrony queries the host clock offset. If nil, /readyz fails closed
-	// per spec §3.2 (an unknown clock is worse than a known-skewed one).
+	// (an unknown clock is worse than a known-skewed one).
 	Chrony chrony.Querier
 
 	// MaxClockDriftMS is the gate. <= 0 disables the drift check.
@@ -91,7 +90,8 @@ type Server struct {
 	lastDropsByNode map[string]int64
 }
 
-// New wires a minimal Server. Use NewWithOptions for the full Phase 4 stack.
+// New wires a minimal Server with default options. Use NewWithOptions for
+// full dependency injection (chrony, Litestream, metrics, etc.).
 func New(db *sql.DB, log zerolog.Logger) *Server {
 	return NewWithOptions(db, log, Options{Tickets: ticket.NewStore(0)})
 }
@@ -123,8 +123,7 @@ func NewWithOptions(db *sql.DB, log zerolog.Logger, opt Options) *Server {
 	return s
 }
 
-// Handler returns an http.Handler with all routes mounted. Uses the Go 1.22
-// http.ServeMux pattern syntax (METHOD + path).
+// Handler returns an http.Handler with all routes mounted.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
@@ -145,7 +144,6 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("GET /metrics", s.metrics.Handler(s.metricsToken, s.refreshMetrics))
 	}
 
-	// ── Web UI ─────────────────────────────────────────────────────────────
 	mux.HandleFunc("GET /ui/login", s.handleUILogin)
 	mux.HandleFunc("POST /ui/login", s.handleUILogin)
 	mux.HandleFunc("POST /ui/logout", s.handleUILogout)
@@ -153,7 +151,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ui/", s.requireSession(s.handleUIDashboard))
 	mux.HandleFunc("GET /ui/nodes", s.requireSession(s.handleUINodes))
 
-	// htmx fragment endpoints (session-gated).
 	mux.HandleFunc("GET /ui/frag/matrix", s.requireSession(s.handleFragMatrix))
 	mux.HandleFunc("GET /ui/frag/nodes/new", s.requireSession(s.handleFragNewNodeForm))
 	mux.HandleFunc("POST /ui/frag/nodes", s.requireSession(s.handleFragCreateNode))
@@ -161,12 +158,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /ui/frag/nodes/{id}/disable", s.requireSession(s.handleFragDisableNode))
 	mux.HandleFunc("PATCH /ui/frag/nodes/{id}/enable", s.requireSession(s.handleFragEnableNode))
 
-	// UI WebSocket (session-gated, separate from agent WS).
 	mux.HandleFunc("GET /api/v1/ui/ws", s.handleUIWS)
 
 	// Static assets — strip "static/" prefix from the embedded FS so that
 	// /static/style.css → fs:static/style.css resolves correctly.
-	staticFS, _ := fs.Sub(nlmui.StaticFS, "static")
+	// fs.Sub over an embed.FS can only fail if "static" is not present in
+	// the embedded tree, which is a programmer error caught at build time.
+	staticFS, err := fs.Sub(nlmui.StaticFS, "static")
+	if err != nil {
+		panic("controller: embedded static FS missing 'static' directory: " + err.Error())
+	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	return mux
@@ -188,26 +189,25 @@ func (s *Server) refreshMetrics() {
 	}
 }
 
-// handleHealthz returns 200 unconditionally; it indicates process liveness
-// per spec §3.2 (chrony / Litestream gates apply only to /readyz).
+// handleHealthz returns 200 unconditionally; chrony / Litestream gates apply
+// only to /readyz.
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleReadyz enforces the readiness gates from spec §3.2:
+// handleReadyz enforces readiness gates:
 //
 //   - chrony query MUST succeed and drift MUST be within MaxClockDriftMS.
-//     If Chrony is nil, /readyz fails closed.
+//     If Chrony is nil, /readyz fails closed (unknown clock is worse than
+//     a known-skewed one).
 //   - If Litestream is wired, the service must be active and lag within
 //     MaxLitestreamLag. Litestream nil = "not configured" = pass.
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
-	resp := map[string]any{"status": "ok"}
-	checks := map[string]any{}
+	resp := readyzResponse{Status: "ok"}
 	failed := false
 
-	// Chrony: fail-closed if unconfigured per spec.
 	if s.chrony == nil {
-		checks["chrony"] = map[string]any{"ok": false, "error": "not configured (fail-closed)"}
+		resp.Checks.Chrony = &chronyCheck{OK: false, Error: "not configured (fail-closed)"}
 		failed = true
 	} else {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -215,13 +215,13 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		cancel()
 		switch {
 		case err != nil:
-			checks["chrony"] = map[string]any{"ok": false, "error": err.Error()}
+			resp.Checks.Chrony = &chronyCheck{OK: false, Error: err.Error()}
 			failed = true
 		case s.maxDriftMS > 0 && float64(drift) > s.maxDriftMS:
-			checks["chrony"] = map[string]any{"ok": false, "drift_ms": float64(drift), "max_ms": s.maxDriftMS}
+			resp.Checks.Chrony = &chronyCheck{OK: false, DriftMS: float64(drift), MaxMS: s.maxDriftMS}
 			failed = true
 		default:
-			checks["chrony"] = map[string]any{"ok": true, "drift_ms": float64(drift)}
+			resp.Checks.Chrony = &chronyCheck{OK: true, DriftMS: float64(drift)}
 			if s.metrics != nil {
 				s.metrics.ClockDriftMS.Set(float64(drift))
 			}
@@ -233,17 +233,17 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		st := s.litestream.Status()
 		lag := s.litestream.Lag()
 		if !s.litestream.Healthy(s.maxLag) {
-			checks["litestream"] = map[string]any{
-				"ok":             false,
-				"service_active": st.ServiceActive,
-				"lag_seconds":    lag.Seconds(),
-				"max_lag":        s.maxLag.Seconds(),
+			resp.Checks.Litestream = &litestreamCheck{
+				OK:            false,
+				ServiceActive: st.ServiceActive,
+				LagSeconds:    lag.Seconds(),
+				MaxLag:        s.maxLag.Seconds(),
 			}
 			failed = true
 		} else {
-			checks["litestream"] = map[string]any{
-				"ok":          true,
-				"lag_seconds": lag.Seconds(),
+			resp.Checks.Litestream = &litestreamCheck{
+				OK:         true,
+				LagSeconds: lag.Seconds(),
 			}
 		}
 		if s.metrics != nil {
@@ -254,17 +254,15 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp["checks"] = checks
 	status := http.StatusOK
 	if failed {
 		status = http.StatusServiceUnavailable
-		resp["status"] = "degraded"
+		resp.Status = "degraded"
 	}
 	writeJSON(w, status, resp)
 }
 
-// dbSize returns the on-disk DB size, summing main + WAL + SHM. Used by the
-// /metrics scrape; called rarely so the os.Stat cost is fine.
+// dbSize returns the on-disk DB size, summing main + WAL + SHM.
 func (s *Server) dbSize() int64 {
 	if s.dbPath == "" {
 		return 0

@@ -153,9 +153,3 @@ func (w *Watcher) parseLine(line string) {
 func (w *Watcher) ServiceName() string {
 	return w.service
 }
-
-// FormatSince formats t as the string passed to journalctl --since.
-// Exported for use in tests that need to match exact query arguments.
-func FormatSince(t time.Time) string {
-	return t.Format("2006-01-02 15:04:05")
-}

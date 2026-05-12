@@ -12,33 +12,7 @@ import (
 	"time"
 )
 
-// ResultsRequest is the agent → controller payload for /api/v1/results.
-// One request = one probe cycle from one source = one or more (target, latency)
-// observations sharing a probe_run_id.
-type ResultsRequest struct {
-	SourceID      string              `json:"source_id"`
-	ProbeRunID    string              `json:"probe_run_id"`
-	ObservedAt    time.Time           `json:"observed_at"`
-	Results       []ResultObservation `json:"results"`
-	SpoolMetadata SpoolMetadata       `json:"spool_metadata"`
-}
-
-// ResultObservation is one (target, latency) measurement.
-type ResultObservation struct {
-	TargetID  string   `json:"target_id"`
-	LatencyMs *float64 `json:"latency_ms"` // nil on failure
-	Error     string   `json:"error"`      // empty on success
-}
-
-// SpoolMetadata mirrors the agent's spool snapshot per spec §3.5.
-type SpoolMetadata struct {
-	SpoolDepth            int   `json:"spool_depth"`
-	SpoolOldestAgeSeconds int   `json:"spool_oldest_age_seconds"`
-	SpoolDropsTotal       int64 `json:"spool_drops_total"`
-	DrainAttempt          int   `json:"drain_attempt"`
-}
-
-// handleResults implements POST /api/v1/results per spec §3.4.
+// handleResults implements POST /api/v1/results.
 //
 // Status code contract:
 //
@@ -128,15 +102,15 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		Dur("latency", time.Since(start)).
 		Msg("results: ingest")
 
-	// Echo the current targets_version so the agent can detect target-set
-	// changes without polling /api/v1/targets every cycle (Phase 5 design).
+	// Echo the current targets_version so agents can detect target-set changes
+	// without polling /api/v1/targets every cycle.
 	version, vErr := s.nodes.TargetsVersion(r.Context())
 	if vErr != nil {
 		s.log.Warn().Err(vErr).Msg("results: read targets_version")
 	}
-	resp := map[string]any{"status": "ok"}
+	resp := resultsResponse{Status: "ok"}
 	if vErr == nil {
-		resp["targets_version"] = version
+		resp.TargetsVersion = &version
 	}
 	writeJSON(w, status, resp)
 }
@@ -166,10 +140,8 @@ func statusLabel(status int) string {
 
 // persistResults writes the batch in a single transaction. Returns 201 on
 // fresh write, 409 if any row collides on (source_id, probe_run_id, target_id).
-//
-// Per spec §3.4, replay of identical content returns 409. We treat any UNIQUE
-// collision in this batch as a replay; the agent doesn't construct mixed
-// batches (one batch == one probe cycle == one HTTP POST).
+// Any UNIQUE collision is treated as a replay; one batch always corresponds
+// to one probe cycle (one HTTP POST).
 func (s *Server) persistResults(ctx context.Context, req *ResultsRequest) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

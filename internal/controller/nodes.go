@@ -116,7 +116,9 @@ func (s *NodeStore) Delete(ctx context.Context, id string) error {
 		return sql.ErrNoRows
 	}
 	if prior.Role == RoleHub && !prior.Disabled {
-		_ = bumpTargetsVersion(ctx, s.db)
+		if err := bumpTargetsVersion(ctx, s.db); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -224,7 +226,9 @@ func (s *NodeStore) Upsert(ctx context.Context, n Node) error {
 		return fmt.Errorf("controller: upsert node: %w", err)
 	}
 	if hubSetChanged(prior, n, priorMissing) {
-		_ = bumpTargetsVersion(ctx, s.db)
+		if err := bumpTargetsVersion(ctx, s.db); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -244,8 +248,7 @@ func hubSetChanged(prior, next Node, priorMissing bool) bool {
 	return false
 }
 
-// SpoolStats is the per-node spool snapshot reported on every results POST,
-// per spec §3.1 / §3.5.
+// SpoolStats is the per-node spool snapshot reported on every results POST.
 type SpoolStats struct {
 	Depth         int
 	OldestAgeSecs int

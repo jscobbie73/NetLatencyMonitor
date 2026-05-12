@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/jscobbie73/netlatencymonitor/internal/config"
-	"github.com/jscobbie73/netlatencymonitor/internal/controller"
+	"github.com/jscobbie73/netlatencymonitor/internal/schema"
 )
 
 // TargetCache fetches and remembers /api/v1/targets. The Hub and Spoke
@@ -37,19 +37,11 @@ type TargetCache struct {
 // backstop (NLM_HUB_REFRESH_INTERVAL); pass 0 to disable.
 func NewTargetCache(controllerURL, nodeID, secret string, httpTimeout, maxAge time.Duration) *TargetCache {
 	return &TargetCache{
-		base:   strings.TrimRight(controllerURL, "/"),
-		nodeID: nodeID,
-		secret: secret,
-		httpClient: &http.Client{
-			Timeout: httpTimeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 5,
-				IdleConnTimeout:     90 * time.Second,
-				ForceAttemptHTTP2:   true,
-			},
-		},
-		maxAge: maxAge,
+		base:       strings.TrimRight(controllerURL, "/"),
+		nodeID:     nodeID,
+		secret:     secret,
+		httpClient: newHTTPClient(httpTimeout),
+		maxAge:     maxAge,
 	}
 }
 
@@ -128,7 +120,7 @@ func (c *TargetCache) fetch(ctx context.Context) ([]config.Target, int64, error)
 		return nil, 0, fmt.Errorf("targets: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	var out controller.TargetsResponse
+	var out schema.TargetsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, 0, fmt.Errorf("targets: decode: %w", err)
 	}

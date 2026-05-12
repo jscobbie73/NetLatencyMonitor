@@ -1,8 +1,4 @@
 // Package config loads NLM configuration from environment variables.
-//
-// All settings are env-var-first per spec §3.1. Operational tuning vars
-// (NLM_SPOOL_*, NLM_PROBE_*, NLM_HUB_REFRESH_INTERVAL, NLM_READY_MAX_CLOCK_DRIFT_MS,
-// NLM_STARTUP_JITTER) may change per environment without breaking compat.
 package config
 
 import (
@@ -13,7 +9,7 @@ import (
 	"time"
 )
 
-// SpoolConfig holds the agent spool settings from spec §3.1.
+// SpoolConfig holds the agent spool settings.
 type SpoolConfig struct {
 	Path               string
 	DrainRows          int
@@ -108,7 +104,7 @@ type AgentConfig struct {
 	HubRefreshInterval time.Duration // NLM_HUB_REFRESH_INTERVAL (default 5m)
 }
 
-// LoadAgent reads agent env vars. Used by spoke and hub modes (Phases 3 / 5).
+// LoadAgent reads agent env vars.
 //
 //	NLM_NODE_ID            agent identifier; must match nodes.id on controller
 //	NLM_NODE_SECRET        bearer secret; takes precedence over the file
@@ -242,11 +238,9 @@ func parseTargets(raw string) ([]Target, error) {
 
 // ControllerConfig holds the controller HTTP + readiness settings.
 type ControllerConfig struct {
-	DBPath  string
-	Listen  string // host:port
-	BaseURL string // optional, used by future ticket flow / UI links
+	DBPath string
+	Listen string // host:port
 
-	// Readiness gates per spec §3.2.
 	MaxClockDriftMS      float64
 	MaxLitestreamLagSecs int
 	WSTicketRateLimit    int
@@ -256,13 +250,11 @@ type ControllerConfig struct {
 	WSAllowedOrigins     []string // NLM_WS_ALLOWED_ORIGINS (comma-separated)
 }
 
-// LoadController reads controller env vars. Defaults are dev-friendly; in
-// production these come from /etc/nlm/controller.env.
+// LoadController reads controller env vars. In production these come from
+// /etc/nlm/controller.env.
 //
-// Readiness env vars per spec §3.2 / §3.3:
-//
-//	NLM_READY_MAX_CLOCK_DRIFT_MS    chrony drift gate (default 100)
-//	NLM_LITESTREAM_MAX_LAG_SECONDS  Litestream lag gate (default 300)
+//	NLM_READY_MAX_CLOCK_DRIFT_MS    chrony drift gate (default 100 ms)
+//	NLM_LITESTREAM_MAX_LAG_SECONDS  Litestream lag gate (default 300 s)
 //	NLM_WS_TICKET_RATE_LIMIT        per-IP ticket-failure cap (default 10)
 //	NLM_METRICS_TOKEN               optional bearer for /metrics
 //	NLM_CHRONYC_BINARY              chronyc executable path (default "chronyc")
@@ -270,7 +262,6 @@ func LoadController() (ControllerConfig, error) {
 	c := ControllerConfig{
 		DBPath:        getString("NLM_CONTROLLER_DB_PATH", "/var/lib/nlm/nlm.db"),
 		Listen:        getString("NLM_CONTROLLER_LISTEN", ":8080"),
-		BaseURL:       getString("NLM_CONTROLLER_BASE_URL", ""),
 		MetricsToken:  getString("NLM_METRICS_TOKEN", ""),
 		ChronycBinary: getString("NLM_CHRONYC_BINARY", "chronyc"),
 		AdminToken:    getString("NLM_ADMIN_TOKEN", ""),

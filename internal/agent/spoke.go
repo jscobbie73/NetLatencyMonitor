@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/jscobbie73/netlatencymonitor/internal/config"
-	"github.com/jscobbie73/netlatencymonitor/internal/controller"
+	"github.com/jscobbie73/netlatencymonitor/internal/schema"
 	"github.com/jscobbie73/netlatencymonitor/internal/spool"
 )
 
@@ -25,7 +25,6 @@ type TargetSource interface {
 // NLM_PROBE_TARGETS is set, mostly for tests and dev.
 type staticTargets struct{ ts []config.Target }
 
-// Targets implements TargetSource.
 func (s staticTargets) Targets(_ context.Context) ([]config.Target, int64, error) {
 	return s.ts, 0, nil
 }
@@ -76,9 +75,7 @@ type CycleStats struct {
 }
 
 // Run runs one full cycle: probe targets, enqueue the result, then drain.
-//
-// Per spec §3.1, the drain step happens on every probe cycle so transient
-// outages catch up on the very next tick once connectivity returns.
+// Draining every cycle means transient outages catch up on the very next tick.
 func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 	targets, _, err := s.source.Targets(ctx)
 	if err != nil {
@@ -96,17 +93,20 @@ func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 	observedAt := s.now()
 	results := RunProbes(ctx, targets, s.cfg.ProbeTimeout)
 
-	// Use the post-drain snapshot from the *previous* cycle as SpoolMetadata.
-	// This satisfies spec §3.5: the reported depth/drops reflect actual state
-	// after drain, not a pre-drain estimate. First cycle reports zero values.
-	prevSnap, _ := s.spool.LastDrainSnapshot(ctx)
+	// Use the post-drain snapshot from the *previous* cycle as SpoolMetadata
+	// so the reported depth/drops reflect actual state after drain, not a
+	// pre-drain estimate. First cycle reports zero values.
+	prevSnap, err := s.spool.LastDrainSnapshot(ctx)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("spoke: read last drain snapshot failed; reporting zero spool metadata")
+	}
 
-	req := controller.ResultsRequest{
+	req := schema.ResultsRequest{
 		SourceID:   s.cfg.NodeID,
 		ProbeRunID: runID,
 		ObservedAt: observedAt,
 		Results:    results,
-		SpoolMetadata: controller.SpoolMetadata{
+		SpoolMetadata: schema.SpoolMetadata{
 			SpoolDepth:            prevSnap.Depth,
 			SpoolOldestAgeSeconds: prevSnap.OldestAgeSecs,
 			SpoolDropsTotal:       prevSnap.DropsTotal,
@@ -140,9 +140,19 @@ func (s *Spoke) Run(ctx context.Context) (CycleStats, error) {
 	}
 
 	// Persist post-drain snapshot for the next cycle's SpoolMetadata report.
-	postDepth, _ := s.spool.Depth(ctx)
-	postOldest, _ := s.spool.OldestAge(ctx)
-	postDrops, _ := s.spool.DropsTotal(ctx)
+	// These reads are best-effort: errors are logged but do not fail the cycle.
+	postDepth, err := s.spool.Depth(ctx)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("spoke: read spool depth failed; reporting zero")
+	}
+	postOldest, err := s.spool.OldestAge(ctx)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("spoke: read spool oldest age failed; reporting zero")
+	}
+	postDrops, err := s.spool.DropsTotal(ctx)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("spoke: read spool drops total failed; reporting zero")
+	}
 	if saveErr := s.spool.SaveDrainSnapshot(ctx, postDepth, int(postOldest.Seconds()), postDrops); saveErr != nil {
 		s.log.Warn().Err(saveErr).Msg("spoke: save drain snapshot failed")
 	}

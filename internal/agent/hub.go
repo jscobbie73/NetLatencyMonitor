@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -20,7 +20,6 @@ type Hub struct {
 	probeInterval time.Duration
 	startupJitter time.Duration
 	log           zerolog.Logger
-	rand          *rand.Rand
 }
 
 // NewHub builds a hub runner around an already-wired Spoke.
@@ -37,7 +36,6 @@ func NewHub(spoke *Spoke, probeInterval, startupJitter time.Duration, log zerolo
 		probeInterval: probeInterval,
 		startupJitter: startupJitter,
 		log:           log,
-		rand:          rand.New(rand.NewSource(time.Now().UnixNano())), //nolint:gosec // not security-sensitive
 	}
 }
 
@@ -46,7 +44,7 @@ func NewHub(spoke *Spoke, probeInterval, startupJitter time.Duration, log zerolo
 // up on the daemon — operator decides when to stop us.
 func (h *Hub) Run(ctx context.Context) error {
 	if h.startupJitter > 0 {
-		jitter := time.Duration(h.rand.Int63n(int64(h.startupJitter)))
+		jitter := rand.N(h.startupJitter)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -79,9 +77,7 @@ func (h *Hub) runCycle(ctx context.Context) error {
 	return err
 }
 
-// HubDeps bundles the dependencies cmd/nlm-agent needs to construct a Hub.
-// Kept as a struct so the wiring layer can be shared with future spoke
-// daemonization.
+// HubDeps bundles the dependencies needed to construct a Hub.
 type HubDeps struct {
 	Cfg     config.AgentConfig
 	Spool   *spool.Spool

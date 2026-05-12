@@ -15,8 +15,7 @@ import (
 const sessionCookie = "nlm_session"
 
 // requireSession redirects unauthenticated requests to /ui/login. The session
-// cookie stores the admin token directly (HttpOnly, SameSite=Strict). Full
-// session management is deferred to spec Phase 2.
+// cookie stores the admin token directly (HttpOnly, SameSite=Strict).
 func (s *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(sessionCookie)
@@ -32,16 +31,14 @@ func isHTTPS(r *http.Request) bool {
 	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
-// ── Login / logout ────────────────────────────────────────────────────────────
-
 func (s *Server) handleUILogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		renderHTML(w, r, nlmui.Login(""))
+		s.renderHTML(w, r, nlmui.Login(""))
 		return
 	}
 	token := strings.TrimSpace(r.FormValue("token"))
 	if s.adminToken == "" || !constantTimeStringEq(token, s.adminToken) {
-		renderHTML(w, r, nlmui.Login("Invalid token."))
+		s.renderHTML(w, r, nlmui.Login("Invalid token."))
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -65,8 +62,6 @@ func (s *Server) handleUILogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
 }
 
-// ── Full pages ────────────────────────────────────────────────────────────────
-
 func (s *Server) handleUIDashboard(w http.ResponseWriter, r *http.Request) {
 	matrix, err := s.queryMatrix(r.Context())
 	if err != nil {
@@ -74,7 +69,7 @@ func (s *Server) handleUIDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	renderHTML(w, r, nlmui.Dashboard(matrix))
+	s.renderHTML(w, r, nlmui.Dashboard(matrix))
 }
 
 func (s *Server) handleUINodes(w http.ResponseWriter, r *http.Request) {
@@ -83,10 +78,8 @@ func (s *Server) handleUINodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	renderHTML(w, r, nlmui.Nodes(infos, ""))
+	s.renderHTML(w, r, nlmui.Nodes(infos, ""))
 }
-
-// ── htmx fragment handlers ────────────────────────────────────────────────────
 
 func (s *Server) handleFragMatrix(w http.ResponseWriter, r *http.Request) {
 	matrix, err := s.queryMatrix(r.Context())
@@ -94,11 +87,11 @@ func (s *Server) handleFragMatrix(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	renderHTML(w, r, nlmui.MatrixTable(matrix))
+	s.renderHTML(w, r, nlmui.MatrixTable(matrix))
 }
 
 func (s *Server) handleFragNewNodeForm(w http.ResponseWriter, r *http.Request) {
-	renderHTML(w, r, nlmui.CreateNodeForm())
+	s.renderHTML(w, r, nlmui.CreateNodeForm())
 }
 
 func (s *Server) handleFragCreateNode(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +124,7 @@ func (s *Server) handleFragCreateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Surface the one-time secret in the page banner above the updated table.
-	renderHTML(w, r, nlmui.Nodes(infos, secret))
+	s.renderHTML(w, r, nlmui.Nodes(infos, secret))
 }
 
 func (s *Server) handleFragDeleteNode(w http.ResponseWriter, r *http.Request) {
@@ -163,10 +156,8 @@ func (s *Server) patchDisabled(w http.ResponseWriter, r *http.Request, disable b
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	renderHTML(w, r, nlmui.NodeRow(nodeToInfo(node)))
+	s.renderHTML(w, r, nlmui.NodeRow(nodeToInfo(node)))
 }
-
-// ── UI WebSocket ──────────────────────────────────────────────────────────────
 
 func (s *Server) handleUIWS(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(sessionCookie)
@@ -186,20 +177,14 @@ func (s *Server) handleUIWS(w http.ResponseWriter, r *http.Request) {
 	s.serveUIClient(conn)
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-func renderHTML(w http.ResponseWriter, r *http.Request, c templ.Component) {
+func (s *Server) renderHTML(w http.ResponseWriter, r *http.Request, c templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = c.Render(r.Context(), w)
-}
-
-// ProbeEvent is the JSON message broadcast to UI WebSocket clients on 201.
-type ProbeEvent struct {
-	Type      string  `json:"type"`
-	SourceID  string  `json:"source_id"`
-	TargetID  string  `json:"target_id"`
-	LatencyMS float64 `json:"latency_ms,omitempty"`
-	Error     string  `json:"error,omitempty"`
+	if err := c.Render(r.Context(), w); err != nil && r.Context().Err() == nil {
+		// The response header is already sent; we cannot change the status code.
+		// Log so the operator can see template rendering failures.
+		// Skip logging when the context is cancelled (client disconnected).
+		s.log.Error().Err(err).Msg("ui: render template failed")
+	}
 }
 
 // broadcastResults fans probe observations out to all connected UI clients.

@@ -1,5 +1,4 @@
-// Package spool implements the agent-side write-ahead spool described in
-// NLM spec §3.1.
+// Package spool implements the agent-side write-ahead spool.
 //
 // One row = one probe cycle = one HTTP POST. The drain step honors an
 // exponential backoff per row, retention bounds count the SQLite footprint
@@ -21,8 +20,7 @@ import (
 )
 
 // SendOutcome is the agent's interpretation of a controller response for
-// one spool row. The drain loop translates HTTP status codes into one of
-// these per spec §3.1 / §3.4.
+// one spool row.
 type SendOutcome int
 
 const (
@@ -62,7 +60,7 @@ type Spool struct {
 }
 
 // Open opens (creating if needed) the spool DB at path, applies migrations,
-// and sets the SQLite pragmas required by spec §3.1 (WAL + synchronous=NORMAL).
+// and configures WAL mode with synchronous=NORMAL for durability.
 func Open(path string, cfg Config) (*Spool, error) {
 	if path == "" {
 		return nil, errors.New("spool: path required")
@@ -97,7 +95,7 @@ func runMigrations(db *sql.DB) error {
 }
 
 // ErrDuplicate is returned by Enqueue when probe_run_id already exists.
-// Callers should treat this as a soft success per spec §3.1 Case C.
+// Callers should treat this as a soft success (the row is already queued).
 var ErrDuplicate = errors.New("spool: duplicate probe_run_id")
 
 // Enqueue inserts one row. payload is the JSON body that will be POSTed
@@ -219,7 +217,7 @@ func (s *Spool) DropsTotal(ctx context.Context) (int64, error) {
 }
 
 // FootprintBytes returns the on-disk size of the spool DB inclusive of WAL
-// and SHM files. Used to enforce NLM_SPOOL_MAX_SIZE_MB per spec §3.1.
+// and SHM files.
 func (s *Spool) FootprintBytes() (int64, error) {
 	var total int64
 	for _, suffix := range []string{"", "-wal", "-shm"} {
@@ -245,9 +243,9 @@ type DrainStats struct {
 	Dropped    int // rows deleted by retention enforcement this cycle
 }
 
-// Drain runs one drain pass per spec §3.1. It selects up to DrainRows rows
-// ordered by enqueued_at, skips any whose backoff window has not elapsed,
-// sends the rest via send, applies outcomes, then enforces retention.
+// Drain runs one drain pass: selects up to DrainRows rows ordered by
+// enqueued_at, skips any whose backoff window has not elapsed, sends the
+// rest via send, applies outcomes, then enforces retention.
 func (s *Spool) Drain(ctx context.Context, send Sender) (DrainStats, error) {
 	var stats DrainStats
 
@@ -351,7 +349,7 @@ func (s *Spool) markFailure(ctx context.Context, id int64, sendErr error) error 
 }
 
 // enforceRetention deletes oldest rows until BOTH age and size bounds are
-// satisfied (spec §3.1) and increments drops_total once per deleted row.
+// satisfied, incrementing drops_total once per deleted row.
 // Returns the number of rows dropped this cycle.
 func (s *Spool) enforceRetention(ctx context.Context) (int, error) {
 	dropped := 0

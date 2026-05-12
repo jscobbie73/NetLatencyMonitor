@@ -15,8 +15,8 @@ import (
 )
 
 // VersionNotifier is anything that wants to be told the controller's
-// current targets_version after a successful (or replayed) ingest. The
-// TargetCache implements it; see Phase 5 design notes.
+// current targets_version after a successful (or replayed) ingest.
+// TargetCache implements this interface.
 type VersionNotifier interface {
 	NoticeVersion(v int64)
 }
@@ -37,17 +37,24 @@ type Client struct {
 // connections warm so repeated drains reuse TCP/TLS sockets.
 func NewClient(controllerURL, nodeID, secret string, httpTimeout time.Duration) *Client {
 	return &Client{
-		base:   strings.TrimRight(controllerURL, "/"),
-		nodeID: nodeID,
-		secret: secret,
-		httpClient: &http.Client{
-			Timeout: httpTimeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 5,
-				IdleConnTimeout:     90 * time.Second,
-				ForceAttemptHTTP2:   true,
-			},
+		base:       strings.TrimRight(controllerURL, "/"),
+		nodeID:     nodeID,
+		secret:     secret,
+		httpClient: newHTTPClient(httpTimeout),
+	}
+}
+
+// newHTTPClient returns an *http.Client configured for controller calls:
+// connection pooling, HTTP/2, and a caller-supplied overall timeout.
+// Shared by NewClient and NewTargetCache to keep transport settings in sync.
+func newHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        10,
+			MaxIdleConnsPerHost: 5,
+			IdleConnTimeout:     90 * time.Second,
+			ForceAttemptHTTP2:   true,
 		},
 	}
 }
